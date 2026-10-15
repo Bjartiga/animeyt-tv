@@ -3,7 +3,10 @@
  * 100% Node.js nativo (sin dependencias de npm)
  * - Sirve archivos estáticos (index.html, css, js, icon, etc.)
  * - Endpoint /proxy?url=... para bypasear CORS en pruebas de navegador en Mac / TV
- * - Escucha en 0.0.0.0:8080
+ * - Modo desarrollo en la tele (módulo TizenBrew "dev-loader"):
+ *   - Recarga automática cuando cambia algún archivo (/__version)
+ *   - Errores y console.* del TV se imprimen en esta terminal (/__log)
+ * - Escucha en 0.0.0.0:8080 (o PORT)
  */
 
 const http = require('http');
@@ -13,7 +16,7 @@ const path = require('path');
 const urlModule = require('url');
 const zlib = require('zlib');
 
-const PORT = 8080;
+const PORT = parseInt(process.env.PORT || '8080', 10);
 const HOST = '0.0.0.0';
 const ROOT_DIR = __dirname;
 
@@ -31,6 +34,85 @@ const MIME_TYPES = {
     '.ico': 'image/x-icon',
     '.wgt': 'application/widget'
 };
+
+// Script inyectado en index.html: marca modo dev, reenvía errores al Mac y recarga al cambiar archivos
+const DEV_CLIENT = `<script>
+(function() {
+    window.__TV_DEV__ = true;
+    function send(level, args) {
+        try {
+            var parts = [];
+            for (var i = 0; i < args.length; i++) {
+                var a = args[i];
+                if (a && a.stack) parts.push(a.stack);
+                else if (typeof a === 'object') { try { parts.push(JSON.stringify(a)); } catch (e) { parts.push(String(a)); } }
+                else parts.push(String(a));
+            }
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/__log', true);
+            xhr.send(JSON.stringify({ level: level, msg: parts.join(' ') }));
+        } catch (e) {}
+    }
+    ['log', 'warn', 'error'].forEach(function(level) {
+        var original = console[level];
+        console[level] = function() {
+            send(level, arguments);
+            return original.apply(console, arguments);
+        };
+    });
+    window.addEventListener('error', function(e) {
+        send('error', ['[window.onerror]', e.message, (e.filename || '') + ':' + e.lineno + ':' + e.colno]);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+        send('error', ['[unhandledrejection]', e.reason]);
+    });
+    send('log', ['[dev] cargado', navigator.userAgent, window.innerWidth + 'x' + window.innerHeight, 'dpr=' + window.devicePixelRatio]);
+
+    var version = null;
+    setInterval(function() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/__version', true);
+        xhr.onload = function() {
+            if (version !== null && xhr.responseText !== version) location.reload();
+            version = xhr.responseText;
+        };
+        xhr.send();
+    }, 1500);
+})();
+</script>
+`;
+
+// Última modificación de index.html, css/ y js/
+function latestMtime() {
+    let latest = 0;
+    const visit = (p) => {
+        const st = fs.statSync(p);
+        if (st.isDirectory()) {
+            fs.readdirSync(p).forEach((f) => visit(path.join(p, f)));
+        } else if (st.mtimeMs > latest) {
+            latest = st.mtimeMs;
+        }
+    };
+    ['index.html', 'css', 'js'].forEach((p) => visit(path.join(ROOT_DIR, p)));
+    return String(latest);
+}
+
+function handleDevLog(req, res) {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+        try {
+            const entry = JSON.parse(body);
+            const tag = entry.level === 'error' ? '❌ TV' : entry.level === 'warn' ? '⚠️  TV' : '📺 TV';
+            console.log(`${tag} ${entry.msg}`);
+        } catch (e) {
+            console.log('📺 TV (log inválido)', body);
+        }
+        setCorsHeaders(res);
+        res.writeHead(204);
+        res.end();
+    });
+}
 
 function setCorsHeaders(res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -154,6 +236,21 @@ function handleStatic(pathname, res) {
 
     const filePath = path.join(ROOT_DIR, safePath);
 
+    if (safePath === '/index.html') {
+        fs.readFile(filePath, 'utf8', (err, html) => {
+            if (err) {
+                res.writeHead(500);
+                res.end(String(err));
+                return;
+            }
+            const withDev = html.replace('<script src="js/keys.js">', DEV_CLIENT + '    <script src="js/keys.js">');
+            setCorsHeaders(res);
+            res.writeHead(200, { 'Content-Type': MIME_TYPES['.html'], 'Cache-Control': 'no-store' });
+            res.end(withDev);
+        });
+        return;
+    }
+
     fs.stat(filePath, (err, stats) => {
         if (err || !stats.isFile()) {
             setCorsHeaders(res);
@@ -169,7 +266,7 @@ function handleStatic(pathname, res) {
         res.writeHead(200, {
             'Content-Type': contentType,
             'Content-Length': stats.size,
-            'Cache-Control': 'no-cache'
+            'Cache-Control': 'no-store'
         });
 
         fs.createReadStream(filePath).pipe(res);
@@ -184,6 +281,18 @@ const server = http.createServer((req, res) => {
         setCorsHeaders(res);
         res.writeHead(204);
         res.end();
+        return;
+    }
+
+    // Modo dev en la tele
+    if (parsedUrl.pathname === '/__version') {
+        setCorsHeaders(res);
+        res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+        res.end(latestMtime());
+        return;
+    }
+    if (parsedUrl.pathname === '/__log' && req.method === 'POST') {
+        handleDevLog(req, res);
         return;
     }
 

@@ -15,6 +15,10 @@
      */
     const TVNet = {
         proxyBase: function() {
+            // Modo dev en la tele: la app viene del dev-server del Mac, que también hace de proxy
+            if (window.__TV_DEV__) {
+                return '/proxy?url=';
+            }
             if (window.location.host === '127.0.0.1:8081') {
                 return 'http://127.0.0.1:8085/proxy?url=';
             }
