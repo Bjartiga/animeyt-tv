@@ -1,0 +1,25 @@
+{
+  "name": "animeyt-tv",
+  "version": "1.0.0",
+  "packageType": "app",
+  "appName": "AnimeYT TV",
+  "appPath": "index.html",
+  "serviceFile": "service/proxy.js",
+  "description": "App nativa de AnimeYT libre de anuncios para Samsung Smart TV",
+  "author": "AnimeYT TV",
+  "keys": [
+    "ColorF0Red",
+    "ColorF1Green",
+    "ColorF2Yellow",
+    "ColorF3Blue",
+    "ChannelUp",
+    "ChannelDown",
+    "Info",
+    "MediaPlay",
+    "MediaPause",
+    "MediaPlayPause",
+    "MediaStop",
+    "MediaFastForward",
+    "MediaRewind"
+  ]
+}
