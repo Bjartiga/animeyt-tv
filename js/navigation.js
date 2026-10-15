@@ -126,8 +126,21 @@
             const current = this.currentFocus;
             if (!current) return this.getFocusableElements()[0] || null;
 
-            const candidates = this.getFocusableElements().filter(el => el !== current);
+            let candidates = this.getFocusableElements().filter(el => el !== current);
+
+            // En una fila horizontal, ◀ ▶ no salen de la fila: al llegar al extremo no se mueve
+            // (si no, saltaba en diagonal a la fila de abajo cuando la fila es corta)
+            const currentRow = current.closest('[data-nav-row]');
+            if (currentRow && (direction === 'LEFT' || direction === 'RIGHT')) {
+                candidates = candidates.filter(el => currentRow.contains(el));
+            }
             if (!candidates.length) return null;
+
+            // ▲ ▼ entre filas: ir siempre a la fila contigua (aunque sea corta y sus tarjetas queden lejos)
+            if (currentRow && (direction === 'UP' || direction === 'DOWN')) {
+                const adjacent = this._adjacentRowTarget(current, currentRow, direction, candidates);
+                if (adjacent) return adjacent;
+            }
 
             const cRect = current.getBoundingClientRect();
             const cCenter = {
@@ -172,13 +185,39 @@
             // Al saltar a otra fila (arriba/abajo) retomar la tarjeta donde se quedó
             if (best && (direction === 'UP' || direction === 'DOWN')) {
                 const targetRow = best.closest('[data-nav-row]');
-                const currentRow = current.closest('[data-nav-row]');
                 if (targetRow && targetRow !== currentRow && targetRow._lastFocus &&
                     targetRow.contains(targetRow._lastFocus) && candidates.indexOf(targetRow._lastFocus) !== -1) {
                     return targetRow._lastFocus;
                 }
             }
             return best;
+        }
+
+        /**
+         * Tarjeta destino en la fila de arriba/abajo: la última enfocada de esa fila o la más cercana en horizontal.
+         * Devuelve null si no hay fila contigua (p. ej. ▲ desde la primera fila va al billboard).
+         */
+        _adjacentRowTarget(current, currentRow, direction, candidates) {
+            const rows = Array.from(currentRow.parentNode.querySelectorAll(':scope > [data-nav-row]'));
+            let index = rows.indexOf(currentRow);
+            const step = direction === 'UP' ? -1 : 1;
+
+            for (index += step; index >= 0 && index < rows.length; index += step) {
+                const row = rows[index];
+                const inRow = candidates.filter(el => row.contains(el));
+                if (!inRow.length) continue;
+
+                if (row._lastFocus && inRow.indexOf(row._lastFocus) !== -1) return row._lastFocus;
+
+                const cRect = current.getBoundingClientRect();
+                const cx = cRect.left + cRect.width / 2;
+                return inRow.reduce((best, el) => {
+                    const r = el.getBoundingClientRect();
+                    const b = best.getBoundingClientRect();
+                    return Math.abs(r.left + r.width / 2 - cx) < Math.abs(b.left + b.width / 2 - cx) ? el : best;
+                });
+            }
+            return null;
         }
 
         _closest(elements, cCenter) {
