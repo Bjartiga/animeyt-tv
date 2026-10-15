@@ -15,7 +15,7 @@ var zlib = require('zlib');
 
 var PORT = 8085;
 var HOST = '127.0.0.1';
-var ALLOWED_HOSTS = /(^|\.)(animeyt\.cc|mytsumi\.com)$/i;
+var ALLOWED_HOSTS = /(^|\.)(animeyt\.cc|mytsumi\.com|ok\.ru)$/i;
 var USER_AGENT = 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.5) AppleWebKit/537.36 (KHTML, like Gecko) Version/5.5 TV Safari/537.36';
 
 // Reusar conexiones TLS: el handshake es lo más lento en el CPU del TV

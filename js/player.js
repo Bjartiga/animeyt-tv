@@ -18,6 +18,8 @@
             this.serverLabelEl = options.serverLabelEl || document.getElementById('player-current-server');
 
             this.iframe = null;
+            this.video = null;
+            this.mountToken = 0;
             this.shield = null;
             this.focusKeeperInterval = null;
             this.osdTimeout = null;
@@ -177,13 +179,14 @@
 
                 this._showOSD();
             } catch (err) {
-                console.error('[TVPlayer] Error cargando episodio:', err);
+                console.error('[TVPlayer] Error cargando episodio:', episodeData.url, err);
                 this._showStatus(`Error: ${err.message || 'No se pudo reproducir'}`);
             }
         }
 
         /**
-         * Monta el iframe sandboxed del servidor actual
+         * Monta el servidor actual: reproductor nativo (<video>) si se puede extraer el video directo,
+         * o el iframe del servidor como respaldo
          */
         _mountCurrentServer() {
             const server = this.servers[this.currentServerIndex];
@@ -193,14 +196,111 @@
                 this.serverLabelEl.textContent = `Servidor: ${server.label} (${server.title || 'HD'})`;
             }
 
-            // Limpieza previa completa
+            this._teardownMedia();
+            this._updateServerButtonsState();
+
+            if (window.TVScraper.canPlayDirect(server)) {
+                this._mountNative(server);
+            } else {
+                this._mountIframe(server);
+            }
+        }
+
+        /**
+         * Quita el video o iframe montado (y cancela montajes nativos en curso)
+         */
+        _teardownMedia() {
+            this.mountToken++;
+            if (this.video) {
+                this.video.pause();
+                this.video.removeAttribute('src');
+                this.video.load();
+                this.video.remove();
+                this.video = null;
+            }
             if (this.iframe) {
                 this.iframe.src = 'about:blank';
                 this.iframe.remove();
                 this.iframe = null;
             }
+            this._setProgressVisible(false);
+            this._updateNavigationLock();
+        }
 
-            // Construir iframe blindado contra anuncios y redirecciones
+        /**
+         * Reproductor nativo: extrae el MP4/HLS del servidor y lo reproduce sin anuncios
+         */
+        _mountNative(server) {
+            const token = this.mountToken;
+            this._showStatus(`Obteniendo video directo de ${server.label}...`);
+
+            window.TVScraper.resolveDirectStream(server)
+                .then((stream) => {
+                    if (token !== this.mountToken) return;
+                    console.log(`[TVPlayer] Directo ${server.label} (${stream.quality}): ${stream.type}`);
+
+                    const video = document.createElement('video');
+                    video.className = 'player-video';
+                    video.autoplay = true;
+                    video.preload = 'auto';
+                    if (stream.poster) video.poster = stream.poster;
+
+                    video.addEventListener('error', () => {
+                        if (token !== this.mountToken) return;
+                        const code = video.error ? video.error.code : '?';
+                        console.error(`[TVPlayer] Error del reproductor nativo (código ${code}) en ${server.label}`);
+                        this._fallbackToIframe(server);
+                    });
+                    video.addEventListener('waiting', () => this._setBuffering(true));
+                    video.addEventListener('playing', () => this._setBuffering(false));
+                    video.addEventListener('canplay', () => this._setBuffering(false));
+                    video.addEventListener('timeupdate', () => this._updateProgress());
+                    video.addEventListener('pause', () => this._showOSD());
+                    video.addEventListener('ended', () => {
+                        this._showNotification('Episodio terminado');
+                        this._showOSD();
+                    });
+
+                    const source = document.createElement('source');
+                    source.src = stream.url;
+                    source.type = stream.type;
+                    source.addEventListener('error', () => {
+                        if (token !== this.mountToken) return;
+                        console.error(`[TVPlayer] La fuente directa de ${server.label} no cargó`);
+                        this._fallbackToIframe(server);
+                    });
+                    video.appendChild(source);
+
+                    this.container.innerHTML = '';
+                    this.container.appendChild(video);
+                    this.video = video;
+                    this._setBuffering(true);
+                    this._setProgressVisible(true);
+                    this._updateNavigationLock();
+
+                    const playPromise = video.play();
+                    if (playPromise && playPromise.catch) {
+                        playPromise.catch((err) => console.warn('[TVPlayer] play() rechazado:', err && err.message));
+                    }
+                    this._showOSD();
+                })
+                .catch((err) => {
+                    if (token !== this.mountToken) return;
+                    console.error(`[TVPlayer] No se pudo extraer el video de ${server.label}:`, err);
+                    this._fallbackToIframe(server);
+                });
+        }
+
+        _fallbackToIframe(server) {
+            this._teardownMedia();
+            this._showNotification(`${server.label}: usando reproductor web`);
+            this._mountIframe(server);
+        }
+
+        /**
+         * Respaldo: iframe sandboxed del servidor (con su propio reproductor y anuncios)
+         */
+        _mountIframe(server) {
             const iframe = document.createElement('iframe');
             const targetUrl = this._enhanceAutoplayUrl(server.url);
 
@@ -219,8 +319,65 @@
 
             // Capa transparente superior que asegura captura de clicks/foco si es necesario
             this._createShield();
+            this._showOSD();
+        }
 
-            this._updateServerButtonsState();
+        /**
+         * Con video nativo y la barra de servidores oculta, las flechas controlan el video
+         * (no la navegación espacial)
+         */
+        _updateNavigationLock() {
+            if (!window.appNavigation) return;
+            window.appNavigation.enabled = !(this.isPlaying && this.video && !this.isServerBarVisible);
+        }
+
+        _setBuffering(isBuffering) {
+            const el = document.getElementById('player-buffering');
+            if (el) el.classList.toggle('is-visible', !!isBuffering);
+        }
+
+        _setProgressVisible(visible) {
+            const el = document.getElementById('player-progress');
+            if (el) el.classList.toggle('is-visible', !!visible);
+        }
+
+        _formatTime(seconds) {
+            if (!isFinite(seconds) || seconds < 0) return '0:00';
+            const total = Math.floor(seconds);
+            const h = Math.floor(total / 3600);
+            const m = Math.floor((total % 3600) / 60);
+            const sec = String(total % 60).padStart(2, '0');
+            return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+        }
+
+        _updateProgress() {
+            if (!this.video) return;
+            const fill = document.getElementById('player-progress-fill');
+            const time = document.getElementById('player-progress-time');
+            const duration = this.video.duration;
+            const current = this.video.currentTime;
+            if (fill) fill.style.width = isFinite(duration) && duration > 0 ? `${(current / duration) * 100}%` : '0%';
+            if (time) time.textContent = `${this._formatTime(current)} / ${this._formatTime(duration)}`;
+        }
+
+        _seekBy(seconds) {
+            if (!this.video) return;
+            const duration = isFinite(this.video.duration) ? this.video.duration : Infinity;
+            this.video.currentTime = Math.max(0, Math.min(duration, this.video.currentTime + seconds));
+            this._updateProgress();
+            this._showNotification(`${seconds > 0 ? '⏩ +' : '⏪ '}${seconds}s`);
+            this._showOSD();
+        }
+
+        _togglePlay() {
+            if (!this.video) return;
+            if (this.video.paused) {
+                this.video.play();
+                this._showNotification('▶ Reproduciendo');
+            } else {
+                this.video.pause();
+                this._showNotification('⏸ Pausa');
+            }
             this._showOSD();
         }
 
@@ -313,6 +470,7 @@
          */
         toggleServerBar() {
             this.isServerBarVisible = !this.isServerBarVisible;
+            this._updateNavigationLock();
             if (this.serverBar) {
                 this.serverBar.classList.toggle('is-visible', this.isServerBarVisible);
                 if (this.isServerBarVisible && window.appNavigation) {
@@ -379,6 +537,33 @@
                 return;
             }
 
+            // Controles del reproductor nativo (con la barra de servidores oculta)
+            const K = window.TVKeys || {};
+            if (this.video && !this.isServerBarVisible) {
+                if (code === K.ENTER || code === K.PLAY_PAUSE || code === K.PLAY || code === K.PAUSE) {
+                    e.preventDefault();
+                    if (code === K.PLAY && !this.video.paused) return;
+                    if (code === K.PAUSE && this.video.paused) return;
+                    this._togglePlay();
+                    return;
+                }
+                if (code === K.LEFT || code === K.REWIND) {
+                    e.preventDefault();
+                    this._seekBy(code === K.REWIND ? -30 : -10);
+                    return;
+                }
+                if (code === K.RIGHT || code === K.FAST_FORWARD) {
+                    e.preventDefault();
+                    this._seekBy(code === K.FAST_FORWARD ? 30 : 10);
+                    return;
+                }
+                if (code === K.UP || code === K.INFO) {
+                    e.preventDefault();
+                    this._showOSD();
+                    return;
+                }
+            }
+
             // Tecla Amarilla (405 / F3) o Flecha Abajo: alternar barra de servidores
             if (code === (window.TVKeys ? window.TVKeys.COLOR_YELLOW : 405) ||
                 (!this.isServerBarVisible && code === (window.TVKeys ? window.TVKeys.DOWN : 40))) {
@@ -437,11 +622,9 @@
 
             window.removeEventListener('keydown', this._handlePlayerKeys, true);
 
-            if (this.iframe) {
-                this.iframe.src = 'about:blank';
-                this.iframe.remove();
-                this.iframe = null;
-            }
+            // isPlaying ya es false: esto también devuelve las flechas a la navegación
+            this._teardownMedia();
+            this._setBuffering(false);
 
             if (this.shield) {
                 this.shield.remove();

@@ -920,3 +920,65 @@ body {
 .app-main::-webkit-scrollbar {
     display: none;
 }
+
+/* Reproductor nativo (<video>) */
+.player-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    object-fit: contain;
+    z-index: 1;
+}
+
+.player-buffering {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin: -25px 0 0 -25px;
+    z-index: 5;
+    display: none;
+}
+
+.player-buffering.is-visible {
+    display: block;
+}
+
+.osd-progress {
+    display: none;
+    align-items: center;
+    margin-top: auto;
+    margin-bottom: 16px;
+}
+
+.osd-progress.is-visible {
+    display: flex;
+}
+
+.osd-progress-track {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.osd-progress-fill {
+    width: 0;
+    height: 100%;
+    background: var(--accent);
+}
+
+.osd-progress-time {
+    margin-left: 16px;
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+    min-width: 150px;
+    text-align: right;
+}
+
+.osd-footer-hints {
+    flex-wrap: wrap;
+}

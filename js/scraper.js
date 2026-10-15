@@ -120,9 +120,73 @@
         throw lastError;
     }
 
+    /**
+     * ok.ru: el embed trae en data-options la metadata con el MP4 directo y el HLS.
+     * Las URLs quedan firmadas para la IP y el User-Agent de quien pidió el embed (la propia tele).
+     */
+    async function resolveOkRu(embedUrl) {
+        const doc = await fetchCleanHTML(embedUrl);
+        const holder = doc.querySelector('[data-options]');
+        if (!holder) throw new Error('ok.ru: no se encontró la metadata del video');
+
+        const options = JSON.parse(holder.getAttribute('data-options'));
+        let metadata = options.flashvars && options.flashvars.metadata;
+        if (typeof metadata === 'string') metadata = JSON.parse(metadata);
+        if (!metadata) throw new Error('ok.ru: metadata vacía');
+
+        const movie = metadata.movie || {};
+        if (movie.status && movie.status !== 'OK') {
+            throw new Error(`ok.ru: ${movie.statusText || movie.status}`);
+        }
+
+        // De mejor a peor calidad; MP4 progresivo es lo más compatible con el reproductor del TV
+        const QUALITY_ORDER = ['full', 'hd', 'sd', 'low', 'lowest', 'mobile'];
+        const videos = (metadata.videos || []).filter(v => v.url && !v.disallowed);
+        videos.sort((a, b) => {
+            const ia = QUALITY_ORDER.indexOf(a.name);
+            const ib = QUALITY_ORDER.indexOf(b.name);
+            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        });
+
+        if (videos.length) {
+            return { url: videos[0].url, type: 'video/mp4', quality: videos[0].name, poster: movie.poster || '' };
+        }
+        if (metadata.ondemandHls) {
+            return { url: metadata.ondemandHls, type: 'application/x-mpegURL', quality: 'hls', poster: movie.poster || '' };
+        }
+        throw new Error('ok.ru: el video no tiene fuentes reproducibles');
+    }
+
+    const DIRECT_RESOLVERS = [
+        { pattern: /^https?:\/\/([^/]+\.)?ok\.ru\/videoembed\//i, resolve: resolveOkRu }
+    ];
+
+    function findDirectResolver(url) {
+        for (let i = 0; i < DIRECT_RESOLVERS.length; i++) {
+            if (DIRECT_RESOLVERS[i].pattern.test(url || '')) return DIRECT_RESOLVERS[i];
+        }
+        return null;
+    }
+
     const TVScraper = {
         resolveUrl: resolveUrl,
         extractImageUrl: extractImageUrl,
+
+        /**
+         * ¿Este servidor se puede reproducir con el reproductor nativo (sin iframe ni anuncios)?
+         */
+        canPlayDirect: function(server) {
+            return !!findDirectResolver(server && server.url);
+        },
+
+        /**
+         * Obtiene la URL directa del video (MP4/HLS) de un servidor soportado
+         */
+        resolveDirectStream: async function(server) {
+            const resolver = findDirectResolver(server && server.url);
+            if (!resolver) throw new Error('Servidor sin soporte directo');
+            return resolver.resolve(server.url);
+        },
 
         /**
          * Obtiene los episodios destacados y últimos lanzamientos de la Home

@@ -142,6 +142,10 @@
         <section id="view-watch" class="view hidden">
             <div id="player-viewport" class="player-viewport"></div>
 
+            <div id="player-buffering" class="player-buffering">
+                <div class="spinner"></div>
+            </div>
+
             <div id="player-osd" class="player-osd">
                 <div class="osd-header">
                     <div class="osd-title-group">
@@ -150,7 +154,15 @@
                     </div>
                 </div>
 
+                <div id="player-progress" class="osd-progress">
+                    <div class="osd-progress-track">
+                        <div id="player-progress-fill" class="osd-progress-fill"></div>
+                    </div>
+                    <span id="player-progress-time" class="osd-progress-time">0:00 / 0:00</span>
+                </div>
+
                 <div class="osd-footer-hints">
+                    <span>OK Pausa · ◀ ▶ 10s · ⏪ ⏩ 30s</span>
                     <span class="key-hint yellow">🟡 [F3] Cambiar Servidor</span>
                     <span class="key-hint blue">🔵 [F4] Marcar Visto</span>
                     <span>Ch+/Ch- Siguiente/Anterior</span>
