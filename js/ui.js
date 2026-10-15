@@ -1,13 +1,99 @@
 /**
- * ui.js - Renderizado de las 6 vistas completas para 10-foot UI en Smart TV
- * Vistas: Home, Search, Catalog con Filtros, Ficha Anime, Reproductor y Settings
+ * ui.js - Renderizado de las vistas estilo Netflix para Smart TV (lienzo 1280x720)
+ * Vistas: Inicio (billboard + filas), Búsqueda, Catálogo, Ficha, Mi lista, Reproductor y Ajustes
  */
 (function(window) {
     'use strict';
 
+    const APP_VERSION = '1.3.0';
+
+    // Fila de Inicio: posición vertical donde queda la fila enfocada (debajo del billboard compacto)
+    const HOME_ROW_ANCHOR = 300;
+
+    function esc(text) {
+        return String(text == null ? '' : text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function cssUrl(url) {
+        return url ? `url('${String(url).replace(/'/g, '%27')}')` : 'none';
+    }
+
+    function progressPercent(url) {
+        const p = window.TVStorage ? window.TVStorage.getProgress(url) : null;
+        if (!p || !p.duration) return 0;
+        return Math.min(100, Math.round((p.time / p.duration) * 100));
+    }
+
+    function isWatched(url) {
+        return window.TVStorage ? window.TVStorage.isWatched(url) : false;
+    }
+
+    /**
+     * Tarjeta 16:9 de episodio
+     */
+    function episodeCard(ep, opts) {
+        const options = opts || {};
+        const percent = progressPercent(ep.url);
+        const watched = isWatched(ep.url);
+        return `
+            <button type="button" class="card card-wide" data-focusable="true" data-action="play-episode"
+                data-url="${esc(ep.url)}" data-title="${esc(ep.animeTitle || ep.title)}" data-ep="${esc(ep.episode)}"
+                data-anime-url="${esc(ep.animeUrl || '')}" data-img="${esc(ep.image || '')}"
+                data-bb-title="${esc(ep.animeTitle || ep.title)}" data-bb-meta="${esc(options.meta || ep.episode || '')}"
+                data-bb-desc="${esc(options.desc || '')}" data-bb-image="${esc(ep.image || '')}" data-bb-kicker="${esc(options.kicker || 'Episodio')}">
+                <div class="card-thumb" style="background-image: ${cssUrl(ep.image)}">
+                    ${ep.episode ? `<span class="card-badge">${esc(ep.episode)}</span>` : ''}
+                    ${watched ? '<span class="card-watched">✓ VISTO</span>' : ''}
+                    ${percent > 0 && percent < 100 ? `<div class="card-progress"><div class="card-progress-fill" style="width: ${percent}%"></div></div>` : ''}
+                </div>
+                <div class="card-body">
+                    <div class="card-title">${esc(options.cardTitle || ep.animeTitle || ep.title)}</div>
+                    <div class="card-sub">${esc(options.cardSub || ep.episode || '')}</div>
+                </div>
+            </button>
+        `;
+    }
+
+    /**
+     * Tarjeta 2:3 de anime (póster)
+     */
+    function posterCard(anime) {
+        const sub = [anime.type, anime.score ? `★ ${anime.score}` : (anime.rating ? `★ ${anime.rating}` : ''), anime.season || anime.status]
+            .filter(Boolean).join(' · ');
+        return `
+            <button type="button" class="card card-poster" data-focusable="true" data-action="open-anime"
+                data-url="${esc(anime.url)}"
+                data-bb-title="${esc(anime.title)}" data-bb-meta="${esc(sub)}" data-bb-image="${esc(anime.image || '')}" data-bb-kicker="Anime">
+                <div class="card-thumb" style="background-image: ${cssUrl(anime.image)}"></div>
+                <div class="card-body">
+                    <div class="card-title">${esc(anime.title)}</div>
+                    <div class="card-sub">${esc(sub)}</div>
+                </div>
+            </button>
+        `;
+    }
+
+    function row(title, cardsHtml) {
+        if (!cardsHtml) return '';
+        return `
+            <section class="row" data-nav-row>
+                <h2 class="row-title">${esc(title)}</h2>
+                <div class="row-viewport">
+                    <div class="row-track" data-row-track>${cardsHtml}</div>
+                </div>
+            </section>
+        `;
+    }
+
     const TVUI = {
         views: {},
         currentViewName: 'home',
+        featured: null,
 
         init: function() {
             this.views = {
@@ -15,6 +101,7 @@
                 search: document.getElementById('view-search'),
                 catalog: document.getElementById('view-catalog'),
                 anime: document.getElementById('view-anime'),
+                mylist: document.getElementById('view-mylist'),
                 watch: document.getElementById('view-watch'),
                 settings: document.getElementById('view-settings')
             };
@@ -23,275 +110,335 @@
         switchView: function(viewName) {
             Object.keys(this.views).forEach(name => {
                 const el = this.views[name];
-                if (el) {
-                    if (name === viewName) {
-                        el.classList.remove('hidden');
-                    } else {
-                        el.classList.add('hidden');
-                    }
-                }
+                if (el) el.classList.toggle('hidden', name !== viewName);
             });
 
             this.currentViewName = viewName;
 
-            // Actualizar menú superior activo
-            const navButtons = document.querySelectorAll('.header-nav-btn');
-            navButtons.forEach(btn => {
+            document.querySelectorAll('.header-nav-btn').forEach(btn => {
                 btn.classList.toggle('is-active', btn.dataset.view === viewName);
             });
 
-            // En la vista de reproductor ocultamos el header principal
+            // En el reproductor se oculta el header
             const header = document.getElementById('app-header');
-            if (header) {
-                if (viewName === 'watch') {
-                    header.classList.add('hidden');
-                } else {
-                    header.classList.remove('hidden');
-                }
-            }
+            if (header) header.classList.toggle('hidden', viewName === 'watch');
+
+            const main = document.getElementById('app-main');
+            if (main) main.scrollTop = 0;
         },
 
         /**
-         * 1. VISTA HOME
+         * Llamado por la navegación en cada cambio de foco
+         */
+        onFocus: function(element) {
+            if (this.currentViewName !== 'home') return;
+            const home = this.views.home;
+            if (!home || !element) return;
+
+            const focusedRow = element.closest('[data-nav-row]');
+            // Las filas por encima de la enfocada se ocultan (quedarían encima del billboard)
+            let above = !!focusedRow;
+            home.querySelectorAll('[data-nav-row]').forEach(r => {
+                if (r === focusedRow) above = false;
+                r.classList.toggle('is-above', above);
+            });
+
+            if (focusedRow) {
+                home.classList.add('is-browsing');
+                this._setBillboard({
+                    kicker: element.dataset.bbKicker,
+                    title: element.dataset.bbTitle,
+                    meta: element.dataset.bbMeta,
+                    desc: element.dataset.bbDesc,
+                    image: element.dataset.bbImage
+                });
+            } else {
+                // Billboard o header: volver al destacado y subir las filas
+                home.classList.remove('is-browsing');
+                const inner = home.querySelector('.home-rows-inner');
+                if (inner) inner.style.transform = '';
+                if (this.featured) this._setBillboard(this.featured);
+            }
+        },
+
+        _setBillboard: function(item) {
+            const set = (id, value) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = value || '';
+            };
+            set('bb-kicker', item.kicker);
+            set('bb-title', item.title);
+            set('bb-meta', item.meta);
+            set('bb-desc', item.desc);
+            const image = document.getElementById('bb-image');
+            if (image && item.image) image.style.backgroundImage = cssUrl(item.image);
+        },
+
+        /**
+         * 1. INICIO
          */
         renderHome: function(data) {
             const container = document.getElementById('home-content');
             if (!container) return;
 
-            let html = '';
+            const heroes = (data.hero || []).filter(h => h.image);
+            const hero = heroes[0] || (data.hero || [])[0] || null;
+            const firstEpisode = (data.episodes || [])[0];
 
-            // Hero destacados
-            if (data.hero && data.hero.length > 0) {
-                // El primer slide de AnimeYT suele ser un banner sin imagen; preferir uno con arte
-                const hero = data.hero.find(h => h.image) || data.hero[0];
-                html += `
-                    <section class="home-hero" style="background-image: linear-gradient(to right, rgba(10,10,15,0.95) 30%, rgba(10,10,15,0.4)), url('${hero.image || ''}')">
-                        <div class="hero-details">
-                            <span class="hero-badge">DESTACADO DE LA TEMPORADA</span>
-                            <h1 class="hero-title">${hero.title}</h1>
-                            <p class="hero-desc">${hero.description || 'Disfruta de este estreno en AnimeYT.'}</p>
-                            <div class="hero-actions">
-                                <button type="button" class="btn btn-primary" data-focusable="true" data-action="open-anime" data-url="${hero.url}">
-                                    ▶ Ver Ficha
-                                </button>
-                                ${hero.episodeUrl ? `
-                                    <button type="button" class="btn btn-secondary" data-focusable="true" data-action="play-episode" data-url="${hero.episodeUrl}" data-title="${hero.title}">
-                                        Ver Episodio
-                                    </button>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </section>
-                `;
-            }
+            this.featured = hero ? {
+                kicker: 'Destacado de la temporada',
+                title: hero.title,
+                meta: '',
+                desc: hero.description,
+                image: hero.image
+            } : {
+                kicker: 'Nuevo episodio',
+                title: firstEpisode ? firstEpisode.title : 'AnimeYT',
+                meta: firstEpisode ? firstEpisode.episode : '',
+                desc: '',
+                image: firstEpisode ? firstEpisode.image : ''
+            };
 
-            // Grid de últimos episodios
-            html += `
-                <section class="section-container">
-                    <div class="section-header">
-                        <h2>Últimos Episodios Emitidos</h2>
-                        <span class="section-hint">Pulsa Enter para reproducir</span>
+            const favorite = hero && window.TVStorage ? window.TVStorage.isFavorite(hero.url) : false;
+            const actions = hero ? `
+                ${hero.episodeUrl ? `
+                    <button type="button" class="btn btn-primary" data-focusable="true" data-action="play-episode"
+                        data-url="${esc(hero.episodeUrl)}" data-title="${esc(hero.title)}" data-anime-url="${esc(hero.url)}" data-img="${esc(hero.image)}">▶ Ver</button>
+                ` : ''}
+                <button type="button" class="btn btn-secondary" data-focusable="true" data-action="open-anime" data-url="${esc(hero.url)}">ⓘ Más información</button>
+                <button type="button" class="btn btn-secondary" data-focusable="true" data-action="toggle-favorite"
+                    data-url="${esc(hero.url)}" data-title="${esc(hero.title)}" data-img="${esc(hero.image)}">${favorite ? '✓ En mi lista' : '＋ Mi lista'}</button>
+            ` : '';
+
+            // Filas
+            let rows = '';
+
+            // Continuar viendo: historial con progreso a medias
+            const history = window.TVStorage ? window.TVStorage.getHistory() : [];
+            const continueCards = history
+                .filter(h => {
+                    const p = progressPercent(h.url);
+                    return p > 0 && p < 95;
+                })
+                .slice(0, 15)
+                .map(h => episodeCard({
+                    url: h.url,
+                    title: h.title,
+                    animeTitle: h.title,
+                    episode: h.episode && h.episode !== h.title ? h.episode : '',
+                    animeUrl: h.animeUrl,
+                    image: h.image
+                }, { kicker: 'Continuar viendo' }))
+                .join('');
+            rows += row('Continuar viendo', continueCards);
+
+            const latestCards = (data.episodes || []).map(ep => episodeCard({
+                url: ep.url,
+                title: ep.title,
+                animeTitle: ep.title,
+                episode: ep.episode,
+                image: ep.image
+            }, { kicker: 'Nuevo episodio' })).join('');
+            rows += row('Últimos episodios', latestCards);
+
+            const featuredCards = heroes.map(h => `
+                <button type="button" class="card card-wide" data-focusable="true" data-action="open-anime" data-url="${esc(h.url)}"
+                    data-bb-kicker="Destacado" data-bb-title="${esc(h.title)}" data-bb-desc="${esc(h.description)}" data-bb-image="${esc(h.image)}">
+                    <div class="card-thumb" style="background-image: ${cssUrl(h.image)}"></div>
+                    <div class="card-body"><div class="card-title">${esc(h.title)}</div><div class="card-sub">Destacado de la temporada</div></div>
+                </button>
+            `).join('');
+            rows += row('Destacados de la temporada', featuredCards);
+
+            const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
+            rows += row('Mi lista', favorites.map(f => posterCard({ url: f.url, title: f.title, image: f.image })).join(''));
+
+            container.innerHTML = `
+                <div class="billboard" id="home-billboard">
+                    <div class="billboard-image" id="bb-image"></div>
+                    <div class="billboard-shade"></div>
+                    <div class="billboard-info">
+                        <span class="billboard-kicker" id="bb-kicker"></span>
+                        <h1 class="billboard-title" id="bb-title"></h1>
+                        <div class="billboard-meta" id="bb-meta"></div>
+                        <p class="billboard-desc" id="bb-desc"></p>
+                        <div class="billboard-actions">${actions}</div>
                     </div>
-                    <div class="episodes-grid" id="home-episodes-grid">
+                </div>
+                <div class="home-rows" data-nav-scroller data-nav-anchor="${HOME_ROW_ANCHOR}">
+                    <div class="home-rows-inner">
+                        ${rows || '<p class="empty-msg" style="padding: 0 48px;">No se pudieron cargar los episodios.</p>'}
+                    </div>
+                </div>
             `;
 
-            if (data.episodes && data.episodes.length > 0) {
-                data.episodes.forEach(ep => {
-                    const isWatched = window.TVStorage ? window.TVStorage.isWatched(ep.url) : false;
-                    html += `
-                        <article class="episode-card" data-focusable="true" data-action="play-episode" data-url="${ep.url}" data-title="${ep.title}" data-ep="${ep.episode}" data-img="${ep.image}">
-                            <div class="episode-poster-wrap">
-                                <img src="${ep.image || 'img/icon.png'}" alt="${ep.title}" loading="lazy" />
-                                <span class="episode-tag">${ep.episode || 'EP'}</span>
-                                ${isWatched ? '<span class="badge-watched">✓ VISTO</span>' : ''}
-                                <div class="play-overlay">▶</div>
-                            </div>
-                            <div class="episode-meta">
-                                <h3 class="episode-title">${ep.title}</h3>
-                            </div>
-                        </article>
-                    `;
-                });
-            } else {
-                html += '<p class="empty-msg">No se pudieron cargar los últimos episodios.</p>';
-            }
-
-            html += `
-                    </div>
-                </section>
-            `;
-
-            container.innerHTML = html;
+            this.views.home.classList.remove('is-browsing');
+            this._setBillboard(this.featured);
         },
 
         /**
-         * 2. VISTA BÚSQUEDA
+         * 2. BÚSQUEDA
          */
-        renderSearchResults: function(results) {
+        renderSearchResults: function(results, query) {
             const container = document.getElementById('search-results-grid');
             const countEl = document.getElementById('search-results-count');
             if (!container) return;
 
             if (countEl) {
-                countEl.textContent = results.length ? `${results.length} animes encontrados` : 'Sin resultados';
+                countEl.textContent = results.length
+                    ? `${results.length} resultados para "${query || ''}"`
+                    : `Sin resultados para "${query || ''}". Prueba con el nombre en romaji o inglés.`;
             }
-
-            if (!results || !results.length) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <p>No se encontraron animes para este término.</p>
-                        <span class="subtext">Prueba buscando en inglés o japonés (romaji)</span>
-                    </div>
-                `;
-                return;
-            }
-
-            let html = '';
-            results.forEach(anime => {
-                html += `
-                    <article class="anime-card" data-focusable="true" data-action="open-anime" data-url="${anime.url}">
-                        <div class="anime-poster-wrap">
-                            <img src="${anime.image || 'img/icon.png'}" alt="${anime.title}" loading="lazy" />
-                            ${anime.rating ? `<span class="score-badge">★ ${anime.rating}</span>` : ''}
-                            <span class="type-badge">${anime.type || 'TV'}</span>
-                        </div>
-                        <div class="anime-meta">
-                            <h3 class="anime-title">${anime.title}</h3>
-                            <span class="anime-sub">${anime.status || anime.season || ''}</span>
-                        </div>
-                    </article>
-                `;
-            });
-
-            container.innerHTML = html;
+            container.innerHTML = (results || []).map(posterCard).join('');
         },
 
         /**
-         * 3. VISTA CATÁLOGO CON FILTROS
+         * 3. CATÁLOGO
          */
-        renderCatalog: function(data, currentFilters = {}) {
+        renderCatalogFilters: function(filters, current) {
+            const form = document.getElementById('catalog-filters-form');
+            if (!form || form.dataset.ready || !filters || !filters.length) return;
+
+            const LABELS = { genero: 'Género', estado: 'Estado', anio: 'Año', temporada: 'Temporada', orden: 'Orden', tipo: 'Tipo' };
+            const all = filters.concat([{
+                name: 'tipo',
+                options: [
+                    { value: '', label: 'Todos los tipos' },
+                    { value: 'tv', label: 'Series TV' },
+                    { value: 'pelicula', label: 'Películas' },
+                    { value: 'ova', label: 'OVAs' },
+                    { value: 'especial', label: 'Especiales' }
+                ]
+            }]);
+
+            form.innerHTML = all.map(f => `
+                <div class="filter-group">
+                    <label for="filter-${f.name}">${esc(LABELS[f.name] || f.name)}</label>
+                    <select class="tv-select" id="filter-${f.name}" name="${esc(f.name)}">
+                        ${f.options.map(o => `<option value="${esc(o.value)}" ${(current || {})[f.name] === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+                    </select>
+                </div>
+            `).join('');
+            form.dataset.ready = '1';
+            window.TVPicker.enhanceAll(form);
+        },
+
+        renderCatalog: function(data) {
             const container = document.getElementById('catalog-results-grid');
             const paginationEl = document.getElementById('catalog-pagination');
             if (!container) return;
 
             if (!data.animes || !data.animes.length) {
-                container.innerHTML = '<p class="empty-msg">No se encontraron animes con los filtros seleccionados.</p>';
+                container.innerHTML = '<p class="empty-msg">No se encontraron animes con estos filtros.</p>';
                 if (paginationEl) paginationEl.innerHTML = '';
                 return;
             }
 
-            let html = '';
-            data.animes.forEach(anime => {
-                html += `
-                    <article class="anime-card" data-focusable="true" data-action="open-anime" data-url="${anime.url}">
-                        <div class="anime-poster-wrap">
-                            <img src="${anime.image || 'img/icon.png'}" alt="${anime.title}" loading="lazy" />
-                            ${anime.score ? `<span class="score-badge">★ ${anime.score}</span>` : ''}
-                            <span class="type-badge">${anime.type || 'TV'}</span>
-                        </div>
-                        <div class="anime-meta">
-                            <h3 class="anime-title">${anime.title}</h3>
-                            <span class="anime-sub">${anime.season || ''}</span>
-                        </div>
-                    </article>
-                `;
-            });
-
-            container.innerHTML = html;
+            container.innerHTML = data.animes.map(posterCard).join('');
 
             if (paginationEl) {
                 const page = data.currentPage || 1;
                 paginationEl.innerHTML = `
-                    <button type="button" class="btn btn-secondary ${page <= 1 ? 'is-disabled' : ''}" data-focusable="true" data-action="catalog-prev-page" ${page <= 1 ? 'disabled' : ''}>
-                        ◀ Anterior
-                    </button>
+                    ${page > 1 ? '<button type="button" class="btn btn-secondary" data-focusable="true" data-action="catalog-prev-page">◀ Anterior</button>' : ''}
                     <span class="page-indicator">Página ${page}</span>
-                    <button type="button" class="btn btn-secondary ${!data.hasNext ? 'is-disabled' : ''}" data-focusable="true" data-action="catalog-next-page" ${!data.hasNext ? 'disabled' : ''}>
-                        Siguiente ▶
-                    </button>
+                    ${data.hasNext ? '<button type="button" class="btn btn-secondary" data-focusable="true" data-action="catalog-next-page">Siguiente ▶</button>' : ''}
                 `;
             }
         },
 
         /**
-         * 4. VISTA FICHA DE ANIME
+         * 4. FICHA DEL ANIME
          */
         renderAnimeDetail: function(anime) {
             const container = document.getElementById('anime-detail-content');
             if (!container) return;
 
-            const episodes = anime.episodes || [];
-            const hasEpisodes = episodes.length > 0;
-            const firstEp = hasEpisodes ? episodes[episodes.length - 1] : null; // EP 1 suele ser el último en orden inverso
-            const latestEp = hasEpisodes ? episodes[0] : null;
+            // El sitio lista del más nuevo al más viejo; mostrar en orden (EP 1 primero)
+            const episodes = (anime.episodes || []).slice().reverse();
+            const resume = this._resumeTarget(episodes);
+            const favorite = window.TVStorage ? window.TVStorage.isFavorite(anime.url) : false;
 
-            let html = `
-                <div class="anime-hero-backdrop" style="background-image: linear-gradient(to bottom, rgba(10,10,15,0.7), rgba(10,10,15,0.98)), url('${anime.backdrop || anime.poster || ''}')">
-                    <div class="anime-detail-header">
-                        <div class="anime-poster-col">
-                            <img class="detail-poster" src="${anime.poster || 'img/icon.png'}" alt="${anime.title}" />
-                        </div>
-                        <div class="anime-info-col">
-                            <h1 class="detail-title">${anime.title}</h1>
-                            <div class="detail-genres">
-                                ${(anime.genres || []).map(g => `<span class="genre-chip">${g}</span>`).join('')}
+            const playButton = resume ? `
+                <button type="button" class="btn btn-primary" data-focusable="true" data-action="play-episode" id="detail-play"
+                    data-url="${esc(resume.episode.url)}" data-title="${esc(anime.title)}" data-ep="${esc(resume.episode.episode)}"
+                    data-anime-url="${esc(anime.url)}" data-img="${esc(resume.episode.image || anime.backdrop || anime.poster)}">
+                    ▶ ${esc(resume.label)}
+                </button>
+            ` : '';
+
+            const episodeCards = episodes.map(ep => episodeCard({
+                url: ep.url,
+                title: ep.title,
+                animeTitle: anime.title,
+                episode: ep.episode,
+                animeUrl: anime.url,
+                image: ep.image || anime.backdrop || anime.poster
+            }, { cardTitle: ep.episode || ep.title, cardSub: ep.title !== ep.episode ? ep.title : '' })).join('');
+
+            container.innerHTML = `
+                <div class="detail">
+                    <div class="detail-backdrop" style="background-image: ${cssUrl(anime.backdrop || anime.poster)}"></div>
+                    <div class="detail-shade"></div>
+                    <div class="detail-header">
+                        <img class="detail-poster" src="${esc(anime.poster || 'img/icon.png')}" alt="" />
+                        <div class="detail-info">
+                            <h1 class="detail-title">${esc(anime.title)}</h1>
+                            <div class="detail-meta">
+                                <span class="chip">${episodes.length} episodios</span>
+                                ${(anime.genres || []).slice(0, 6).map(g => `<span class="chip">${esc(g)}</span>`).join('')}
                             </div>
-                            <p class="detail-synopsis">${anime.synopsis || 'Sin descripción disponible.'}</p>
+                            <p class="detail-synopsis">${esc(anime.synopsis || 'Sin descripción disponible.')}</p>
                             <div class="detail-actions">
-                                ${firstEp ? `
-                                    <button type="button" class="btn btn-primary" data-focusable="true" data-action="play-episode" data-url="${firstEp.url}" data-title="${anime.title}" data-ep="${firstEp.episode}">
-                                        ▶ Ver Episodio 1
-                                    </button>
-                                ` : ''}
-                                ${latestEp && latestEp !== firstEp ? `
-                                    <button type="button" class="btn btn-secondary" data-focusable="true" data-action="play-episode" data-url="${latestEp.url}" data-title="${anime.title}" data-ep="${latestEp.episode}">
-                                        Último (${latestEp.episode})
-                                    </button>
-                                ` : ''}
+                                ${playButton}
+                                <button type="button" class="btn btn-secondary" data-focusable="true" data-action="toggle-favorite"
+                                    data-url="${esc(anime.url)}" data-title="${esc(anime.title)}" data-img="${esc(anime.poster)}">
+                                    ${favorite ? '✓ En mi lista' : '＋ Mi lista'}
+                                </button>
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <div class="section-container episodes-section">
-                    <div class="section-header">
-                        <h2>Episodios Disponibles (${episodes.length})</h2>
-                        <span class="section-hint">Azul (F4): Marcar visto/no visto</span>
-                    </div>
-                    <div class="episodes-grid detail-episodes-grid">
-            `;
-
-            if (hasEpisodes) {
-                episodes.forEach(ep => {
-                    const isWatched = window.TVStorage ? window.TVStorage.isWatched(ep.url) : false;
-                    html += `
-                        <article class="episode-card" data-focusable="true" data-action="play-episode" data-url="${ep.url}" data-title="${anime.title}" data-ep="${ep.episode}" data-img="${ep.image || anime.poster}">
-                            <div class="episode-poster-wrap">
-                                <img src="${ep.image || anime.poster || 'img/icon.png'}" alt="${ep.title}" loading="lazy" />
-                                <span class="episode-tag">${ep.episode || 'EP'}</span>
-                                ${isWatched ? '<span class="badge-watched">✓ VISTO</span>' : ''}
-                                <div class="play-overlay">▶</div>
-                            </div>
-                            <div class="episode-meta">
-                                <h3 class="episode-title">${ep.title || ep.episode}</h3>
-                            </div>
-                        </article>
-                    `;
-                });
-            } else {
-                html += '<p class="empty-msg">No se encontraron episodios listados para esta obra.</p>';
-            }
-
-            html += `
+                    <div class="detail-episodes">
+                        <h2 class="section-title">Episodios</h2>
+                        ${episodes.length ? `<div class="episode-grid">${episodeCards}</div>` : '<p class="empty-msg">Este anime aún no tiene episodios publicados.</p>'}
                     </div>
                 </div>
             `;
-
-            container.innerHTML = html;
         },
 
         /**
-         * 6. VISTA AJUSTES / SETTINGS
+         * Episodio para el botón principal: el que quedó a medias, o el siguiente al último visto, o el primero
+         */
+        _resumeTarget: function(episodes) {
+            if (!episodes.length) return null;
+            let lastWatchedIdx = -1;
+            for (let i = 0; i < episodes.length; i++) {
+                const percent = progressPercent(episodes[i].url);
+                if (percent > 0 && percent < 90 && !isWatched(episodes[i].url)) {
+                    return { episode: episodes[i], label: `Continuar ${episodes[i].episode || ''}`.trim() };
+                }
+                if (isWatched(episodes[i].url)) lastWatchedIdx = i;
+            }
+            if (lastWatchedIdx >= 0 && lastWatchedIdx + 1 < episodes.length) {
+                const next = episodes[lastWatchedIdx + 1];
+                return { episode: next, label: `Ver ${next.episode || 'siguiente'}` };
+            }
+            return { episode: episodes[0], label: `Ver ${episodes[0].episode || 'episodio 1'}` };
+        },
+
+        /**
+         * 5. MI LISTA
+         */
+        renderMyList: function() {
+            const container = document.getElementById('mylist-content');
+            if (!container) return;
+            const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
+            container.innerHTML = favorites.length
+                ? `<div class="poster-grid">${favorites.map(f => posterCard({ url: f.url, title: f.title, image: f.image })).join('')}</div>`
+                : '<p class="empty-msg">Tu lista está vacía. Abre un anime y elige “＋ Mi lista”.</p>';
+        },
+
+        /**
+         * 7. AJUSTES
          */
         renderSettings: function() {
             const container = document.getElementById('settings-content');
@@ -299,83 +446,85 @@
 
             const settings = window.TVStorage ? window.TVStorage.getSettings() : {};
             const history = window.TVStorage ? window.TVStorage.getHistory() : [];
-            const watched = window.TVStorage ? window.TVStorage.getWatched() : {};
-            const watchedCount = Object.keys(watched).length;
+            const watchedCount = window.TVStorage ? Object.keys(window.TVStorage.getWatched()).length : 0;
+            const autoNext = !(settings.autoNext === false || settings.autoNext === 'false');
 
-            let html = `
-                <div class="settings-grid">
-                    <div class="settings-card">
-                        <h3>Preferencias de Reproducción</h3>
+            const option = (value, label, current) =>
+                `<option value="${value}" ${String(current) === value ? 'selected' : ''}>${label}</option>`;
 
-                        <div class="setting-item">
-                            <label for="setting-server">Servidor Preferido:</label>
-                            <select id="setting-server" class="tv-select" data-focusable="true" data-setting-key="preferredServer">
-                                <option value="auto" ${settings.preferredServer === 'auto' ? 'selected' : ''}>Automático (OK.ru > Abyss > Byse)</option>
-                                <option value="ok" ${settings.preferredServer === 'ok' ? 'selected' : ''}>OK.ru (1080p Full HD)</option>
-                                <option value="abyss" ${settings.preferredServer === 'abyss' ? 'selected' : ''}>Abyss Player (1080p)</option>
-                                <option value="epsilon" ${settings.preferredServer === 'epsilon' ? 'selected' : ''}>Epsilon (1080p)</option>
-                                <option value="byse" ${settings.preferredServer === 'byse' ? 'selected' : ''}>Byse (720p)</option>
-                                <option value="alpha" ${settings.preferredServer === 'alpha' ? 'selected' : ''}>Alpha / BurstCloud (720p)</option>
-                                <option value="mega" ${settings.preferredServer === 'mega' ? 'selected' : ''}>MEGA</option>
+            container.innerHTML = `
+                <div class="settings-list">
+                    <section class="settings-section">
+                        <h2>Reproducción</h2>
+                        <div class="setting-row">
+                            <label for="setting-server">Servidor preferido<small>Se usa primero al abrir un episodio</small></label>
+                            <select id="setting-server" class="tv-select" data-setting-key="preferredServer">
+                                ${option('auto', 'Automático (OK primero)', settings.preferredServer)}
+                                ${option('ok', 'OK · 1080p sin anuncios', settings.preferredServer)}
+                                ${option('abyss', 'Abyss · 1080p', settings.preferredServer)}
+                                ${option('epsilon', 'Epsilon · 1080p', settings.preferredServer)}
+                                ${option('byse', 'Byse · 720p', settings.preferredServer)}
+                                ${option('alpha', 'Alpha · 720p', settings.preferredServer)}
+                                ${option('mega', 'MEGA · 720p', settings.preferredServer)}
                             </select>
                         </div>
-
-                        <div class="setting-item">
-                            <label for="setting-quality">Calidad Predeterminada:</label>
-                            <select id="setting-quality" class="tv-select" data-focusable="true" data-setting-key="preferredQuality">
-                                <option value="1080p" ${settings.preferredQuality === '1080p' ? 'selected' : ''}>1080p Full HD</option>
-                                <option value="720p" ${settings.preferredQuality === '720p' ? 'selected' : ''}>720p HD</option>
+                        <div class="setting-row">
+                            <label for="setting-quality">Calidad<small>Para servidores con video directo (OK)</small></label>
+                            <select id="setting-quality" class="tv-select" data-setting-key="preferredQuality">
+                                ${option('1080p', '1080p Full HD', settings.preferredQuality)}
+                                ${option('720p', '720p HD', settings.preferredQuality)}
+                                ${option('480p', '480p', settings.preferredQuality)}
+                                ${option('360p', '360p (conexión lenta)', settings.preferredQuality)}
                             </select>
                         </div>
-                    </div>
+                        <div class="setting-row">
+                            <label for="setting-autonext">Siguiente episodio automático<small>Cuenta regresiva de 10 s al terminar</small></label>
+                            <select id="setting-autonext" class="tv-select" data-setting-key="autoNext">
+                                ${option('true', 'Activado', autoNext)}
+                                ${option('false', 'Desactivado', autoNext)}
+                            </select>
+                        </div>
+                    </section>
 
-                    <div class="settings-card">
-                        <h3>Datos y Almacenamiento</h3>
-                        <p class="settings-info">Capítulos vistos registrados: <strong>${watchedCount}</strong></p>
-                        <p class="settings-info">Entradas en historial: <strong>${history.length}</strong></p>
-
+                    <section class="settings-section">
+                        <h2>Datos</h2>
+                        <p class="settings-info">Episodios vistos: <strong>${watchedCount}</strong> · En historial: <strong>${history.length}</strong></p>
                         <div class="settings-actions">
-                            <button type="button" class="btn btn-secondary" data-focusable="true" data-action="clear-watched">
-                                Borrar Episodios Vistos
-                            </button>
-                            <button type="button" class="btn btn-secondary" data-focusable="true" data-action="clear-history">
-                                Borrar Historial
-                            </button>
+                            <button type="button" class="btn btn-secondary" data-focusable="true" data-action="clear-watched">Borrar vistos</button>
+                            <button type="button" class="btn btn-secondary" data-focusable="true" data-action="clear-history">Borrar historial</button>
                         </div>
-                    </div>
+                    </section>
 
-                    <div class="settings-card">
-                        <h3>Acerca de AnimeYT TV</h3>
-                        <p class="settings-info">Versión: <strong>1.0.0 (Tizen OS 4.0+)</strong></p>
-                        <p class="settings-info">Arquitectura: <strong>Scraper nativo sin CORS + Sandboxed Iframe</strong></p>
-                        <p class="settings-info">Protección: <strong>Bloqueo total de Pop-ups y Anuncios</strong></p>
-                        <div class="remote-legend">
-                            <h4>Atajos del Control Remoto:</h4>
-                            <ul>
-                                <li>🔴 <strong>Rojo (F1):</strong> Búsqueda rápida</li>
-                                <li>🟢 <strong>Verde (F2):</strong> Catálogo con Filtros</li>
-                                <li>🟡 <strong>Amarillo (F3):</strong> Selector de Servidores</li>
-                                <li>🔵 <strong>Azul (F4):</strong> Marcar Visto</li>
-                                <li>↩ <strong>Return (Esc):</strong> Volver / Salir de Video</li>
-                            </ul>
-                        </div>
-                    </div>
+                    <section class="settings-section">
+                        <h2>Control remoto</h2>
+                        <ul class="remote-legend">
+                            <li><i class="dot red"></i> Rojo: Buscar · <i class="dot green"></i> Verde: Catálogo · <i class="dot yellow"></i> Amarillo: Ajustes</li>
+                            <li><i class="dot blue"></i> Azul: marcar episodio visto / no visto</li>
+                            <li>En el video: OK pausa · ◀ ▶ 10 s · ⏪ ⏩ 30 s · Verde salta la intro · ▼ servidores · CH+/CH− episodio</li>
+                            <li>El volumen se maneja con los botones del TV</li>
+                        </ul>
+                    </section>
+
+                    <section class="settings-section">
+                        <h2>Acerca de</h2>
+                        <p class="settings-info">AnimeYT TV ${APP_VERSION}</p>
+                    </section>
                 </div>
             `;
 
-            container.innerHTML = html;
+            window.TVPicker.enhanceAll(container);
         },
 
-        showLoading: function(show, text = 'Cargando contenido...') {
+        showLoading: function(show, text) {
             const loader = document.getElementById('global-loader');
             const loaderText = document.getElementById('loader-text');
             if (loader) {
-                if (loaderText) loaderText.textContent = text;
+                if (loaderText) loaderText.textContent = text || 'Cargando...';
                 loader.classList.toggle('hidden', !show);
             }
         },
 
-        showToast: function(message, duration = 2500) {
+        showToast: function(message, duration) {
             let toast = document.getElementById('app-toast');
             if (!toast) {
                 toast = document.createElement('div');
@@ -385,7 +534,8 @@
             }
             toast.textContent = message;
             toast.classList.add('is-active');
-            setTimeout(() => toast.classList.remove('is-active'), duration);
+            clearTimeout(this._toastTimer);
+            this._toastTimer = setTimeout(() => toast.classList.remove('is-active'), duration || 2500);
         }
     };
 

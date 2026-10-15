@@ -9,12 +9,13 @@
         WATCHED: 'animeyt_watched_v1',
         HISTORY: 'animeyt_history_v1',
         FAVORITES: 'animeyt_favorites_v1',
-        SETTINGS: 'animeyt_settings_v1'
+        SETTINGS: 'animeyt_settings_v1',
+        PROGRESS: 'animeyt_progress_v1'
     };
 
     const DEFAULT_SETTINGS = {
         preferredServer: 'auto', // 'auto', 'ok', 'abyss', 'epsilon', 'byse', 'alpha', 'mega'
-        preferredQuality: '1080p',
+        preferredQuality: '1080p', // '1080p', '720p', '480p', '360p' (servidores con video directo)
         autoPlay: true,
         autoNext: true
     };
@@ -75,8 +76,8 @@
             if (!item || !item.url) return;
             try {
                 let history = this.getHistory();
-                // Filtrar duplicados por URL de anime o episodio
-                history = history.filter(h => h.url !== item.url && h.animeUrl !== item.animeUrl);
+                // Una entrada por anime (o por episodio si no se conoce el anime)
+                history = history.filter(h => h.url !== item.url && !(item.animeUrl && h.animeUrl === item.animeUrl));
                 history.unshift({
                     title: item.title || '',
                     episode: item.episode || '',
@@ -127,10 +128,83 @@
         },
 
         /**
+         * Posición de reproducción por episodio (para "Continuar viendo" y reanudar)
+         */
+        getProgress: function(url) {
+            if (!url) return null;
+            return this._readJson(STORAGE_KEYS.PROGRESS, {})[url] || null;
+        },
+
+        getAllProgress: function() {
+            return this._readJson(STORAGE_KEYS.PROGRESS, {});
+        },
+
+        saveProgress: function(url, time, duration) {
+            if (!url || !isFinite(time) || !isFinite(duration) || duration <= 0) return;
+            const all = this._readJson(STORAGE_KEYS.PROGRESS, {});
+            all[url] = { time: Math.floor(time), duration: Math.floor(duration), updated: Date.now() };
+            // Conservar solo los 100 más recientes
+            const urls = Object.keys(all);
+            if (urls.length > 100) {
+                urls.sort((a, b) => all[a].updated - all[b].updated);
+                urls.slice(0, urls.length - 100).forEach(u => { delete all[u]; });
+            }
+            this._writeJson(STORAGE_KEYS.PROGRESS, all);
+        },
+
+        clearProgress: function(url) {
+            const all = this._readJson(STORAGE_KEYS.PROGRESS, {});
+            delete all[url];
+            this._writeJson(STORAGE_KEYS.PROGRESS, all);
+        },
+
+        /**
+         * Mi lista (favoritos)
+         */
+        getFavorites: function() {
+            return this._readJson(STORAGE_KEYS.FAVORITES, []);
+        },
+
+        isFavorite: function(animeUrl) {
+            return this.getFavorites().some(f => f.url === animeUrl);
+        },
+
+        toggleFavorite: function(anime) {
+            if (!anime || !anime.url) return false;
+            let favorites = this.getFavorites();
+            const exists = favorites.some(f => f.url === anime.url);
+            if (exists) {
+                favorites = favorites.filter(f => f.url !== anime.url);
+            } else {
+                favorites.unshift({ url: anime.url, title: anime.title || '', image: anime.image || '', added: Date.now() });
+            }
+            this._writeJson(STORAGE_KEYS.FAVORITES, favorites);
+            return !exists;
+        },
+
+        _readJson: function(key, fallback) {
+            try {
+                const data = localStorage.getItem(key);
+                return data ? JSON.parse(data) : fallback;
+            } catch (e) {
+                return fallback;
+            }
+        },
+
+        _writeJson: function(key, value) {
+            try {
+                localStorage.setItem(key, JSON.stringify(value));
+            } catch (e) {
+                console.error('[TVStorage] Error guardando', key, e);
+            }
+        },
+
+        /**
          * Limpieza
          */
         clearHistory: function() {
             localStorage.removeItem(STORAGE_KEYS.HISTORY);
+            localStorage.removeItem(STORAGE_KEYS.PROGRESS);
         },
 
         clearWatched: function() {
@@ -142,6 +216,7 @@
             localStorage.removeItem(STORAGE_KEYS.WATCHED);
             localStorage.removeItem(STORAGE_KEYS.FAVORITES);
             localStorage.removeItem(STORAGE_KEYS.SETTINGS);
+            localStorage.removeItem(STORAGE_KEYS.PROGRESS);
         }
     };
 

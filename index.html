@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>AnimeYT TV</title>
-    
+
     <!-- CSP Permisiva para Tizen Smart TV y reproducción de video -->
     <meta http-equiv="Content-Security-Policy"
           content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;
@@ -19,126 +19,58 @@
 </head>
 <body>
 
-    <!-- Header Principal -->
+    <!-- Header: transparente sobre el billboard -->
     <header id="app-header" class="app-header">
-        <div class="brand-container">
-            <img src="icon.png" alt="AnimeYT" class="brand-logo">
+        <div class="brand">
+            <span class="brand-mark">A</span>
             <span class="brand-title">AnimeYT</span>
-            <span class="brand-tag">TV</span>
         </div>
 
         <nav class="header-nav">
-            <button type="button" class="header-nav-btn is-active" data-focusable="true" data-action="nav" data-view="home">
-                🏠 Inicio
-            </button>
-            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="search">
-                🔍 Buscar <span class="key-hint red">[🔴]</span>
-            </button>
-            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="catalog">
-                📑 Catálogo <span class="key-hint green">[🟢]</span>
-            </button>
-            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="settings">
-                ⚙️ Ajustes <span class="key-hint yellow">[🟡]</span>
-            </button>
+            <button type="button" class="header-nav-btn is-active" data-focusable="true" data-action="nav" data-view="home">Inicio</button>
+            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="search">Buscar <i class="dot red"></i></button>
+            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="catalog">Catálogo <i class="dot green"></i></button>
+            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="mylist">Mi lista</button>
+            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="settings">Ajustes <i class="dot yellow"></i></button>
         </nav>
-
-        <div class="header-shortcuts">
-            <span class="key-hint red">🔴 Buscar</span>
-            <span class="key-hint green">🟢 Catálogo</span>
-            <span class="key-hint yellow">🟡 Ajustes</span>
-            <span class="key-hint blue">🔵 Visto</span>
-            <span>↩ Volver</span>
-        </div>
     </header>
 
-    <!-- Contenedor Principal de Vistas -->
     <main id="app-main" class="app-main">
 
-        <!-- 1. Vista Home (Inicio) -->
-        <section id="view-home" class="view">
+        <!-- 1. Inicio: billboard + filas -->
+        <section id="view-home" class="view view-home">
             <div id="home-content"></div>
         </section>
 
-        <!-- 2. Vista Búsqueda -->
-        <section id="view-search" class="view hidden">
-            <div class="search-bar-container">
-                <div class="search-input-wrap">
-                    <input type="search" id="search-input" class="search-input" placeholder="Buscar anime por nombre..." autocomplete="off" data-focusable="true" />
-                </div>
-                <button type="button" id="search-submit-btn" class="btn btn-primary" data-focusable="true">
-                    Buscar
-                </button>
+        <!-- 2. Búsqueda -->
+        <section id="view-search" class="view view-page hidden">
+            <div class="search-bar">
+                <input type="search" id="search-input" class="search-input" placeholder="Buscar anime por nombre..." autocomplete="off" data-focusable="true" />
+                <button type="button" id="search-submit-btn" class="btn btn-primary" data-focusable="true">Buscar</button>
             </div>
-            <div class="section-header">
-                <h2 id="search-results-count">Resultados de búsqueda</h2>
-                <span class="section-hint">Pulsa Enter en el buscador para escribir con el teclado del TV</span>
-            </div>
-            <div id="search-results-grid" class="anime-grid"></div>
+            <h2 id="search-results-count" class="page-subtitle">Escribe al menos 3 letras</h2>
+            <div id="search-results-grid" class="poster-grid"></div>
         </section>
 
-        <!-- 3. Vista Catálogo con Filtros -->
-        <section id="view-catalog" class="view hidden">
-            <form id="catalog-filters-form" class="catalog-filters-form" onsubmit="return false;">
-                <div class="filter-group">
-                    <label for="catalog-status">Estado:</label>
-                    <select id="catalog-status" name="estado" class="tv-select" data-focusable="true">
-                        <option value="">Todos los estados</option>
-                        <option value="emision">En emisión</option>
-                        <option value="finalizado">Finalizado</option>
-                        <option value="proximo">Próximo</option>
-                        <option value="hiatus">Hiatus</option>
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label for="catalog-genre">Género:</label>
-                    <select id="catalog-genre" name="genero" class="tv-select" data-focusable="true">
-                        <option value="">Todos los géneros</option>
-                        <option value="accion">Acción</option>
-                        <option value="aventura">Aventura</option>
-                        <option value="comedia">Comedia</option>
-                        <option value="drama">Drama</option>
-                        <option value="escolar">Escolar</option>
-                        <option value="fantasia">Fantasía</option>
-                        <option value="harem">Harem</option>
-                        <option value="misterio">Misterio</option>
-                        <option value="romance">Romance</option>
-                        <option value="shounen">Shounen</option>
-                        <option value="sobrenatural">Sobrenatural</option>
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label for="catalog-order">Orden:</label>
-                    <select id="catalog-order" name="orden" class="tv-select" data-focusable="true">
-                        <option value="recientes">Más recientes</option>
-                        <option value="rating">Mejor valorados</option>
-                        <option value="titulo">Título A-Z</option>
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label for="catalog-type">Tipo:</label>
-                    <select id="catalog-type" name="tipo" class="tv-select" data-focusable="true">
-                        <option value="">Todos los tipos</option>
-                        <option value="tv">Series TV</option>
-                        <option value="pelicula">Películas</option>
-                        <option value="ova">OVAs</option>
-                        <option value="especial">Especiales</option>
-                    </select>
-                </div>
-            </form>
-
-            <div id="catalog-results-grid" class="anime-grid"></div>
-            <div id="catalog-pagination" class="pagination-controls"></div>
+        <!-- 3. Catálogo con filtros (los filtros se cargan desde el sitio) -->
+        <section id="view-catalog" class="view view-page hidden">
+            <form id="catalog-filters-form" class="filter-bar" onsubmit="return false;"></form>
+            <div id="catalog-results-grid" class="poster-grid"></div>
+            <div id="catalog-pagination" class="pagination"></div>
         </section>
 
-        <!-- 4. Vista Ficha de Anime -->
+        <!-- 4. Ficha del anime -->
         <section id="view-anime" class="view hidden">
             <div id="anime-detail-content"></div>
         </section>
 
-        <!-- 5. Vista Reproductor Fullscreen (Watch) -->
+        <!-- 5. Mi lista -->
+        <section id="view-mylist" class="view view-page hidden">
+            <h1 class="page-title">Mi lista</h1>
+            <div id="mylist-content"></div>
+        </section>
+
+        <!-- 6. Reproductor -->
         <section id="view-watch" class="view hidden">
             <div id="player-viewport" class="player-viewport"></div>
 
@@ -147,60 +79,63 @@
             </div>
 
             <div id="player-osd" class="player-osd">
-                <div class="osd-header">
-                    <div class="osd-title-group">
-                        <h2 id="player-title">Cargando episodio...</h2>
-                        <span id="player-current-server" class="osd-server-badge">Servidor: Cargando...</span>
-                    </div>
+                <div class="osd-top">
+                    <h2 id="player-title">Cargando episodio...</h2>
+                    <span id="player-current-server" class="osd-server">Servidor: cargando...</span>
                 </div>
 
-                <div id="player-progress" class="osd-progress">
-                    <div class="osd-progress-track">
-                        <div id="player-progress-fill" class="osd-progress-fill"></div>
+                <div class="osd-bottom">
+                    <div id="player-progress" class="osd-progress">
+                        <div class="osd-progress-track">
+                            <div id="player-progress-fill" class="osd-progress-fill"></div>
+                        </div>
+                        <span id="player-progress-time" class="osd-progress-time">0:00 / 0:00</span>
                     </div>
-                    <span id="player-progress-time" class="osd-progress-time">0:00 / 0:00</span>
-                </div>
 
-                <div class="osd-footer-hints">
-                    <span>OK Pausa · ◀ ▶ 10s · ⏪ ⏩ 30s</span>
-                    <span class="key-hint yellow">🟡 [F3] Cambiar Servidor</span>
-                    <span class="key-hint blue">🔵 [F4] Marcar Visto</span>
-                    <span>Ch+/Ch- Siguiente/Anterior</span>
-                    <span>↩ [Esc] Volver a la Ficha</span>
+                    <div class="osd-hints">
+                        <span><b>OK</b> Pausa</span>
+                        <span><b>◀ ▶</b> 10s</span>
+                        <span><i class="dot green"></i> Saltar intro</span>
+                        <span><b>▼</b> Servidores</span>
+                        <span><b>CH+ / CH−</b> Episodio</span>
+                        <span><i class="dot blue"></i> Visto</span>
+                    </div>
                 </div>
             </div>
 
-            <!-- Barra inferior para cambiar servidor al vuelo -->
-            <div id="player-server-bar" class="player-server-bar">
-                <div class="server-bar-title">Seleccionar Servidor de Video:</div>
+            <div id="player-next" class="player-next">
+                <span id="player-next-label" class="player-next-label">Siguiente episodio</span>
+                <span class="player-next-hint"><b>OK</b> ver ahora · <b>↩</b> cancelar</span>
+            </div>
+
+            <!-- Panel de servidores (▼ o amarillo para abrir, ▲ o ↩ para cerrar) -->
+            <div id="player-server-bar" class="player-server-bar" data-nav-scope>
+                <div class="server-bar-title">Servidor de video <span>▲ cerrar</span></div>
                 <div id="player-server-list" class="player-server-list"></div>
             </div>
 
             <div id="player-toast" class="app-toast"></div>
         </section>
 
-        <!-- 6. Vista Ajustes -->
-        <section id="view-settings" class="view hidden">
-            <div class="section-header">
-                <h2>Configuración de la App</h2>
-            </div>
+        <!-- 7. Ajustes -->
+        <section id="view-settings" class="view view-page hidden">
+            <h1 class="page-title">Ajustes</h1>
             <div id="settings-content"></div>
         </section>
 
     </main>
 
-    <!-- Indicador de Carga Global -->
     <div id="global-loader" class="global-loader hidden">
         <div class="spinner"></div>
         <p id="loader-text" class="loader-text">Cargando...</p>
     </div>
 
-    <!-- Scripts de la Aplicación en Orden de Dependencia -->
     <script src="js/keys.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/api.js"></script>
     <script src="js/scraper.js"></script>
     <script src="js/navigation.js"></script>
+    <script src="js/picker.js"></script>
     <script src="js/player.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/app.js"></script>

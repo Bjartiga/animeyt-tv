@@ -1,23 +1,22 @@
 /**
- * app.css - Estilos 10-foot UI para Samsung Smart TV (1920x1080)
+ * app.css - UI 10-foot estilo Netflix para Samsung Smart TV
+ * Lienzo de 1280x720 que js/app.js escala a la pantalla (1.5x en 1920x1080).
+ * Compatible con Chromium 69 (app instalada): sin inset, aspect-ratio, gap en flexbox, :is(), clamp().
  */
 
 :root {
-    --bg-primary: #0a0a0f;
-    --bg-secondary: #12121a;
-    --bg-card: #181824;
-    --bg-card-hover: #222232;
-    --accent: #8b5cf6;
-    --accent-hover: #a78bfa;
-    --accent-glow: rgba(139, 92, 246, 0.4);
-    --text-primary: #f3f4f6;
-    --text-secondary: #9ca3af;
-    --text-muted: #6b7280;
-    --success: #10b981;
-    --danger: #ef4444;
-    --warning: #f59e0b;
-    --card-radius: 12px;
-    --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    --bg: #0b0b0f;
+    --bg-elevated: #16161d;
+    --bg-card: #1d1d26;
+    --accent: #e50914;
+    --accent-soft: rgba(229, 9, 20, 0.85);
+    --focus: #ffffff;
+    --text: #f5f5f7;
+    --text-dim: #b3b3bd;
+    --text-muted: #7c7c88;
+    --success: #46d369;
+    --radius: 6px;
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 * {
@@ -28,18 +27,17 @@
     -webkit-user-select: none;
 }
 
-/* La UI se diseña en un lienzo de 1280x720 y js/app.js lo escala a la pantalla (1.5x en 1920x1080) */
 html {
-    background-color: var(--bg-primary);
+    background: var(--bg);
     overflow: hidden;
 }
 
 body {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'SamsungOne', sans-serif;
-    font-size: 20px;
-    line-height: 1.4;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SamsungOne', 'Samsung Sharp Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 18px;
+    line-height: 1.35;
     width: 1280px;
     height: 720px;
     overflow: hidden;
@@ -47,128 +45,111 @@ body {
     transform-origin: 0 0;
 }
 
-/* Indicador de Foco Global para Navegación con Control Remoto */
+button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+.dot.red { background: #e53935; }
+.dot.green { background: #43a047; }
+.dot.yellow { background: #fdd835; }
+.dot.blue { background: #1e88e5; }
+
+/* ---------- Foco ---------- */
 [data-focusable="true"] {
-    transition: transform var(--transition);
-    outline: 3px solid transparent;
-    outline-offset: 3px;
+    outline: none;
+    transition: transform 160ms var(--ease);
 }
 
-[data-focusable="true"].has-focus {
-    outline-color: var(--accent);
-    transform: scale(1.05);
-    z-index: 20;
-}
-
-/* Header de la Aplicación */
+/* ---------- Header ---------- */
 .app-header {
-    height: 90px;
-    background: linear-gradient(180deg, rgba(18, 18, 26, 0.95) 0%, rgba(10, 10, 15, 0.8) 100%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 48px;
-    position: fixed;
+    position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    z-index: 100;
-}
-
-.brand-container {
+    height: 72px;
+    padding: 0 48px;
     display: flex;
     align-items: center;
+    z-index: 100;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0) 100%);
 }
 
-.brand-container > * + * {
-    margin-left: 16px;
+.brand {
+    display: flex;
+    align-items: center;
+    margin-right: 40px;
 }
 
-.brand-logo {
-    width: 44px;
-    height: 44px;
-    border-radius: 8px;
+.brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 900;
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 10px;
 }
 
 .brand-title {
-    font-size: 28px;
+    font-size: 24px;
     font-weight: 800;
-    letter-spacing: -0.5px;
-    background: linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-
-.brand-tag {
-    font-size: 13px;
-    font-weight: 700;
-    padding: 2px 8px;
-    background: rgba(139, 92, 246, 0.2);
-    border: 1px solid var(--accent);
-    color: var(--accent-hover);
-    border-radius: 4px;
+    letter-spacing: 0.5px;
 }
 
 .header-nav {
     display: flex;
-}
-
-.header-nav > * + * {
-    margin-left: 12px;
-}
-
-.header-nav-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 20px;
-    font-weight: 600;
-    padding: 10px 20px;
-    border-radius: 8px;
-    cursor: pointer;
-    display: flex;
     align-items: center;
 }
 
-.header-nav-btn > * + * {
-    margin-left: 8px;
+.header-nav-btn {
+    padding: 8px 16px;
+    margin-right: 6px;
+    border-radius: 20px;
+    color: var(--text-dim);
+    font-size: 17px;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 2px solid transparent;
+}
+
+.header-nav-btn .dot {
+    margin-left: 4px;
+    width: 7px;
+    height: 7px;
 }
 
 .header-nav-btn.is-active {
     color: #fff;
-    background: rgba(255, 255, 255, 0.1);
 }
 
-.header-shortcuts {
-    display: flex;
-    align-items: center;
-    font-size: 15px;
-    color: var(--text-muted);
+.header-nav-btn.has-focus {
+    background: #fff;
+    color: #000;
 }
 
-.header-shortcuts > * + * {
-    margin-left: 16px;
-}
-
-.key-hint {
-    display: inline-flex;
-    align-items: center;
-}
-
-.key-hint > * + * {
-    margin-left: 4px;
-}
-
-.key-hint.red { color: #f87171; }
-.key-hint.green { color: #4ade80; }
-.key-hint.yellow { color: #fbbf24; }
-.key-hint.blue { color: #60a5fa; }
-
-/* Contenedor Principal de Vistas */
+/* ---------- Área principal ---------- */
 .app-main {
     position: absolute;
-    top: 90px;
+    top: 0;
     left: 0;
     right: 0;
     bottom: 0;
@@ -176,148 +157,272 @@ body {
     overflow-x: hidden;
 }
 
+.app-main::-webkit-scrollbar {
+    display: none;
+}
+
 .view {
-    width: 100%;
     min-height: 100%;
-    padding: 32px 48px 80px;
 }
 
-.view.hidden, .hidden {
-    display: none !important;
+.view-page {
+    padding: 96px 48px 48px;
 }
 
-/* Home Hero Banner */
-.home-hero {
-    min-height: 380px;
-    border-radius: var(--card-radius);
-    background-size: cover;
-    background-position: center;
-    display: flex;
-    align-items: flex-end;
-    padding: 40px;
-    margin-bottom: 40px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.hero-details {
-    max-width: 65%;
-}
-
-.hero-badge {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--accent-hover);
-    letter-spacing: 1px;
-    margin-bottom: 8px;
-    display: inline-block;
-}
-
-.hero-title {
-    font-size: 38px;
+.page-title {
+    font-size: 34px;
     font-weight: 800;
-    margin-bottom: 12px;
-    line-height: 1.2;
+    margin-bottom: 24px;
 }
 
-.hero-desc {
+.page-subtitle {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin: 24px 0 16px;
+}
+
+.empty-msg {
+    color: var(--text-muted);
     font-size: 18px;
-    color: var(--text-secondary);
-    margin-bottom: 24px;
+    padding: 32px 0;
+}
+
+/* ---------- Botones ---------- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 11px 26px;
+    border-radius: var(--radius);
+    font-size: 18px;
+    font-weight: 700;
+    white-space: nowrap;
+    margin-right: 12px;
+    border: 2px solid transparent;
+}
+
+.btn-primary {
+    background: #fff;
+    color: #000;
+}
+
+.btn-secondary {
+    background: rgba(109, 109, 110, 0.7);
+    color: #fff;
+}
+
+.btn.has-focus {
+    transform: scale(1.06);
+    border-color: #fff;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+}
+
+.btn-primary.has-focus {
+    background: #fff;
+}
+
+.btn-secondary.has-focus {
+    background: rgba(160, 160, 165, 0.85);
+}
+
+.btn[disabled],
+.btn.is-disabled {
+    opacity: 0.35;
+}
+
+/* ---------- Billboard (Inicio) ---------- */
+.view-home {
+    position: relative;
+    height: 720px;
+    overflow: hidden;
+}
+
+.billboard {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    z-index: 1;
+}
+
+.billboard-image {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 900px;
+    height: 506px;
+    background-size: cover;
+    background-position: center top;
+    transition: opacity 300ms ease;
+}
+
+.billboard-shade {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    background:
+        linear-gradient(90deg, var(--bg) 22%, rgba(11, 11, 15, 0.75) 45%, rgba(11, 11, 15, 0) 75%),
+        linear-gradient(0deg, var(--bg) 30%, rgba(11, 11, 15, 0) 62%);
+}
+
+.billboard-info {
+    position: absolute;
+    top: 110px;
+    left: 48px;
+    width: 560px;
+    transition: top 250ms var(--ease);
+}
+
+.billboard-kicker {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: var(--accent);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.billboard-title {
+    font-size: 44px;
+    font-weight: 900;
+    line-height: 1.05;
+    margin-bottom: 12px;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
 
-.hero-actions {
+.billboard-meta {
+    font-size: 16px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+
+.billboard-desc {
+    font-size: 17px;
+    color: var(--text);
+    opacity: 0.9;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 22px;
+}
+
+.billboard-actions {
     display: flex;
 }
 
-.hero-actions > * + * {
-    margin-left: 16px;
+/* Al navegar las filas, el billboard se compacta y muestra la tarjeta enfocada */
+.view-home.is-browsing .billboard-info {
+    top: 84px;
 }
 
-/* Botones */
-.btn {
-    font-size: 18px;
-    font-weight: 600;
-    padding: 12px 28px;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+.view-home.is-browsing .billboard-actions {
+    visibility: hidden;
 }
 
-.btn > * + * {
-    margin-left: 8px;
+.view-home.is-browsing .billboard-title {
+    font-size: 36px;
 }
 
-.btn-primary {
-    background: var(--accent);
-    color: #fff;
-}
-
-.btn-secondary {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.btn.is-disabled {
-    opacity: 0.4;
+/* ---------- Filas horizontales ---------- */
+.home-rows {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    overflow: hidden;
+    z-index: 2;
     pointer-events: none;
 }
 
-/* Secciones y Headers */
-.section-container {
-    margin-bottom: 48px;
+.home-rows-inner {
+    position: relative;
+    padding-top: 448px;
+    transition: transform 280ms var(--ease);
 }
 
-.section-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    margin-bottom: 20px;
+.home-rows-inner > * {
+    pointer-events: auto;
 }
 
-.section-header h2 {
-    font-size: 26px;
-    font-weight: 700;
-}
-
-.section-hint {
-    font-size: 15px;
-    color: var(--text-muted);
-}
-
-/* Grid de Episodios (16:9) */
-.episodes-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 24px;
-}
-
-.episode-card {
-    background: var(--bg-card);
-    border-radius: var(--card-radius);
+.row {
+    position: relative;
+    margin-bottom: 28px;
     overflow: hidden;
-    cursor: pointer;
-    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.episode-poster-wrap {
+.row-title {
+    font-size: 20px;
+    font-weight: 700;
+    padding: 0 48px;
+    margin-bottom: 10px;
+}
+
+.row-viewport {
+    padding: 8px 48px 14px;
+    overflow: hidden;
+}
+
+.row-track {
+    display: flex;
+    white-space: nowrap;
+    transition: transform 280ms var(--ease);
+}
+
+/* ---------- Tarjetas ---------- */
+.card {
+    position: relative;
+    flex: 0 0 auto;
+    margin-right: 14px;
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    overflow: hidden;
+    border: 3px solid transparent;
+    text-align: left;
+    white-space: normal;
+}
+
+.card.has-focus {
+    transform: scale(1.08);
+    border-color: var(--focus);
+    z-index: 5;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+}
+
+.card-thumb {
     position: relative;
     width: 100%;
     height: 0;
-    padding-top: 56.25%; /* 16:9 */
-    background: #111;
-    overflow: hidden;
+    background: #111 center / cover no-repeat;
 }
 
-.episode-poster-wrap img {
+.card-wide {
+    width: 252px;
+}
+
+.card-wide .card-thumb {
+    padding-top: 56.25%; /* 16:9 */
+}
+
+.card-poster {
+    width: 150px;
+}
+
+.card-poster .card-thumb {
+    padding-top: 150%; /* 2:3 */
+}
+
+.card-thumb img {
     position: absolute;
     top: 0;
     left: 0;
@@ -326,602 +431,426 @@ body {
     object-fit: cover;
 }
 
-.episode-tag {
+.card-badge {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    background: rgba(0, 0, 0, 0.85);
-    color: #fff;
-    font-size: 14px;
-    font-weight: 700;
-    padding: 3px 8px;
+    top: 8px;
+    left: 8px;
+    padding: 2px 8px;
     border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.8);
+    font-size: 13px;
+    font-weight: 800;
 }
 
-.badge-watched {
+.card-badge-right {
+    left: auto;
+    right: 8px;
+}
+
+.card-watched {
     position: absolute;
-    top: 10px;
-    right: 10px;
-    background: rgba(16, 185, 129, 0.9);
-    color: #fff;
+    top: 8px;
+    right: 8px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--success);
+    color: #000;
     font-size: 12px;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 4px;
+    font-weight: 800;
 }
 
-.play-overlay {
+.card-progress {
     position: absolute;
-    top: 0;
+    left: 0;
     right: 0;
     bottom: 0;
-    left: 0;
-    background: rgba(0, 0, 0, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 36px;
-    color: #fff;
-    opacity: 0;
-    transition: opacity var(--transition);
+    height: 5px;
+    background: rgba(255, 255, 255, 0.25);
 }
 
-.episode-card.has-focus .play-overlay {
-    opacity: 1;
+.card-progress-fill {
+    height: 100%;
+    background: var(--accent);
 }
 
-.episode-meta {
-    padding: 14px 16px;
+.card-body {
+    padding: 8px 10px 10px;
 }
 
-.episode-title {
-    font-size: 18px;
-    font-weight: 600;
+.card-title {
+    font-size: 15px;
+    font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* Grid de Animes (Posters verticales 2:3) */
-.anime-grid {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 24px;
-}
-
-.anime-card {
-    background: var(--bg-card);
-    border-radius: var(--card-radius);
-    overflow: hidden;
-    cursor: pointer;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.anime-poster-wrap {
-    position: relative;
-    width: 100%;
-    height: 0;
-    padding-top: 150%; /* 2:3 */
-    background: #111;
-    overflow: hidden;
-}
-
-.anime-poster-wrap img {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.score-badge {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: rgba(0, 0, 0, 0.8);
-    color: #fbbf24;
-    font-size: 13px;
-    font-weight: 700;
-    padding: 3px 6px;
-    border-radius: 4px;
-}
-
-.type-badge {
-    position: absolute;
-    bottom: 8px;
-    left: 8px;
-    background: var(--accent);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-
-.anime-meta {
-    padding: 12px 14px;
-}
-
-.anime-title {
-    font-size: 16px;
-    font-weight: 600;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    height: 44px;
-}
-
-.anime-sub {
+.card-sub {
     font-size: 13px;
     color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* Vista Búsqueda */
-.search-bar-container {
+/* ---------- Rejillas (búsqueda, catálogo, mi lista) ---------- */
+.poster-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 150px);
+    grid-gap: 22px 18px;
+    justify-content: space-between;
+}
+
+.poster-grid .card {
+    margin-right: 0;
+}
+
+.episode-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 252px);
+    grid-gap: 24px 18px;
+    justify-content: space-between;
+}
+
+.episode-grid .card {
+    margin-right: 0;
+}
+
+/* ---------- Búsqueda ---------- */
+.search-bar {
     display: flex;
-    margin-bottom: 32px;
-    max-width: 900px;
-}
-
-.search-bar-container > * + * {
-    margin-left: 16px;
-}
-
-.search-input-wrap {
-    flex: 1;
-    position: relative;
+    align-items: center;
 }
 
 .search-input {
-    width: 100%;
-    height: 60px;
-    background: var(--bg-card);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    padding: 0 24px;
-    color: #fff;
+    flex: 1;
+    height: 56px;
+    padding: 0 22px;
+    margin-right: 14px;
+    border-radius: var(--radius);
+    border: 3px solid transparent;
+    background: var(--bg-elevated);
+    color: var(--text);
     font-size: 22px;
 }
 
+.search-input.has-focus,
 .search-input:focus {
-    border-color: var(--accent);
+    border-color: #fff;
     outline: none;
-    box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-/* Vista Catálogo con Filtros */
-.catalog-filters-form {
+/* ---------- Catálogo ---------- */
+.filter-bar {
     display: flex;
     flex-wrap: wrap;
-    margin-bottom: 32px;
-    background: var(--bg-card);
-    padding: 20px 24px;
-    border-radius: var(--card-radius);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.catalog-filters-form > * {
-    margin: 0 16px 16px 0;
+    align-items: center;
+    margin-bottom: 26px;
 }
 
 .filter-group {
     display: flex;
     align-items: center;
-}
-
-.filter-group > * + * {
-    margin-left: 10px;
+    margin: 0 16px 10px 0;
 }
 
 .filter-group label {
-    font-size: 16px;
-    color: var(--text-muted);
+    font-size: 15px;
+    color: var(--text-dim);
+    margin-right: 8px;
 }
 
-.tv-select {
-    background: var(--bg-secondary);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #fff;
-    padding: 10px 18px;
-    font-size: 17px;
-    border-radius: 8px;
-    outline: none;
-}
-
-.pagination-controls {
+.pagination {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-top: 48px;
-}
-
-.pagination-controls > * + * {
-    margin-left: 24px;
+    margin-top: 32px;
 }
 
 .page-indicator {
-    font-size: 20px;
+    font-size: 17px;
+    color: var(--text-dim);
+    margin: 0 18px 0 6px;
+}
+
+/* ---------- Selector de opciones (reemplaza <select>) ---------- */
+.tv-picker {
+    display: inline-flex;
+    align-items: center;
+    min-width: 170px;
+    height: 44px;
+    padding: 0 16px;
+    border-radius: var(--radius);
+    background: var(--bg-elevated);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    font-size: 16px;
     font-weight: 600;
 }
 
-/* Ficha de Anime */
-.anime-hero-backdrop {
-    border-radius: var(--card-radius);
-    background-size: cover;
-    background-position: center;
-    padding: 48px;
-    margin-bottom: 40px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+.tv-picker.has-focus {
+    border-color: #fff;
+    background: #2a2a35;
+    transform: scale(1.04);
 }
 
-.anime-detail-header {
+.tv-picker-value {
+    flex: 1;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+}
+
+.tv-picker-caret {
+    margin-left: 10px;
+    color: var(--text-muted);
+}
+
+.tv-picker-modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 3000;
     display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.anime-detail-header > * + * {
-    margin-left: 40px;
+.tv-picker-panel {
+    width: 440px;
+    max-height: 600px;
+    background: var(--bg-elevated);
+    border-radius: 10px;
+    padding: 22px 0 14px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
 }
 
-.anime-poster-col {
-    width: 260px;
-    flex-shrink: 0;
+.tv-picker-title {
+    font-size: 22px;
+    font-weight: 800;
+    padding: 0 26px 12px;
+}
+
+.tv-picker-list {
+    overflow-y: auto;
+    padding: 6px 14px;
+}
+
+.tv-picker-list::-webkit-scrollbar {
+    display: none;
+}
+
+.tv-picker-option {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: var(--radius);
+    font-size: 18px;
+    text-align: left;
+    color: var(--text-dim);
+    border: 2px solid transparent;
+}
+
+.tv-picker-option.is-selected {
+    color: #fff;
+    font-weight: 700;
+}
+
+.tv-picker-option.has-focus {
+    background: #fff;
+    color: #000;
+}
+
+.tv-picker-check {
+    width: 26px;
+    color: var(--accent);
+    font-weight: 900;
+}
+
+.tv-picker-option.has-focus .tv-picker-check {
+    color: var(--accent);
+}
+
+.tv-picker-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 12px 26px 0;
+}
+
+/* ---------- Ficha del anime ---------- */
+.detail {
+    position: relative;
+    min-height: 720px;
+}
+
+.detail-backdrop {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 900px;
+    height: 506px;
+    background-size: cover;
+    background-position: center top;
+}
+
+.detail-shade {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 506px;
+    background:
+        linear-gradient(90deg, var(--bg) 25%, rgba(11, 11, 15, 0.7) 50%, rgba(11, 11, 15, 0) 80%),
+        linear-gradient(0deg, var(--bg) 0%, rgba(11, 11, 15, 0) 40%);
+}
+
+.detail-header {
+    position: relative;
+    display: flex;
+    padding: 110px 48px 30px;
+    z-index: 2;
 }
 
 .detail-poster {
-    width: 100%;
-    border-radius: 10px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    width: 170px;
+    height: 255px;
+    object-fit: cover;
+    border-radius: var(--radius);
+    margin-right: 32px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+    flex: 0 0 auto;
 }
 
-.anime-info-col {
-    flex: 1;
+.detail-info {
+    width: 640px;
 }
 
 .detail-title {
     font-size: 40px;
-    font-weight: 800;
-    margin-bottom: 16px;
-    line-height: 1.2;
+    font-weight: 900;
+    line-height: 1.08;
+    margin-bottom: 12px;
 }
 
-.detail-genres {
-    display: flex;
-    flex-wrap: wrap;
-    margin-bottom: 20px;
+.detail-meta {
+    margin-bottom: 12px;
 }
 
-.detail-genres > * {
-    margin: 0 8px 8px 0;
-}
-
-.genre-chip {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 600;
-    padding: 4px 12px;
-    border-radius: 6px;
+.chip {
+    display: inline-block;
+    padding: 3px 10px;
+    margin: 0 6px 6px 0;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    font-size: 13px;
+    color: var(--text-dim);
 }
 
 .detail-synopsis {
-    font-size: 19px;
-    color: var(--text-secondary);
-    line-height: 1.6;
-    margin-bottom: 32px;
-    max-height: 140px;
-    overflow-y: auto;
+    font-size: 16px;
+    color: var(--text-dim);
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 22px;
 }
 
 .detail-actions {
     display: flex;
 }
 
-.detail-actions > * + * {
-    margin-left: 16px;
+.detail-episodes {
+    position: relative;
+    z-index: 2;
+    padding: 0 48px 48px;
 }
 
-/* Vista Reproductor de Video (Watch) */
+.section-title {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 16px;
+}
+
+/* ---------- Ajustes ---------- */
+.settings-list {
+    width: 820px;
+}
+
+.settings-section {
+    margin-bottom: 30px;
+}
+
+.settings-section h2 {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.setting-row label {
+    font-size: 18px;
+}
+
+.setting-row small {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.settings-info {
+    font-size: 16px;
+    color: var(--text-dim);
+    padding: 6px 0;
+}
+
+.settings-actions {
+    display: flex;
+    margin-top: 12px;
+}
+
+.remote-legend li {
+    list-style: none;
+    font-size: 15px;
+    color: var(--text-dim);
+    padding: 4px 0;
+}
+
+/* ---------- Reproductor ---------- */
 #view-watch {
-    padding: 0;
-    position: fixed;
+    position: absolute;
     top: 0;
-    right: 0;
-    bottom: 0;
     left: 0;
+    width: 1280px;
+    height: 720px;
     background: #000;
     z-index: 1000;
 }
 
 .player-viewport {
+    position: relative;
     width: 100%;
     height: 100%;
-    position: relative;
     background: #000;
 }
 
-.player-loading-state {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-secondary);
-}
-
-.player-loading-state > * + * {
-    margin-top: 16px;
-}
-
-.player-osd {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 32px 48px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 300ms ease;
-    z-index: 10;
-}
-
-.player-osd.is-visible {
-    opacity: 1;
-}
-
-.osd-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, transparent 100%);
-    margin: -32px -48px 0;
-    padding: 32px 48px;
-}
-
-.osd-title-group h2 {
-    font-size: 26px;
-    font-weight: 700;
-}
-
-.osd-server-badge {
-    font-size: 16px;
-    color: var(--accent-hover);
-}
-
-.osd-footer-hints {
-    display: flex;
-    justify-content: center;
-    background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, transparent 100%);
-    margin: 0 -48px -32px;
-    padding: 24px 48px 32px;
-}
-
-.osd-footer-hints > * + * {
-    margin-left: 32px;
-}
-
-.player-server-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: rgba(10, 10, 15, 0.95);
-    border-top: 2px solid var(--accent);
-    padding: 24px 48px;
-    transform: translateY(100%);
-    transition: transform 300ms ease;
-    z-index: 20;
-    pointer-events: auto;
-}
-
-.player-server-bar.is-visible {
-    transform: translateY(0);
-}
-
-.server-bar-title {
-    font-size: 18px;
-    font-weight: 700;
-    margin-bottom: 16px;
-    color: var(--text-secondary);
-}
-
-.player-server-list {
-    display: flex;
-    overflow-x: auto;
-}
-
-.player-server-list > * + * {
-    margin-left: 16px;
-}
-
-.player-server-btn {
-    background: var(--bg-card);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #fff;
-    padding: 12px 24px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 18px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-}
-
-.player-server-btn > * + * {
-    margin-left: 12px;
-}
-
-.player-server-btn.is-active {
-    background: var(--accent);
-    border-color: var(--accent-hover);
-}
-
-.server-num {
-    background: rgba(0, 0, 0, 0.3);
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-}
-
-/* Vista Ajustes */
-.settings-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 32px;
-    max-width: 1200px;
-}
-
-.settings-card {
-    background: var(--bg-card);
-    padding: 32px;
-    border-radius: var(--card-radius);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.settings-card h3 {
-    font-size: 24px;
-    font-weight: 700;
-    margin-bottom: 24px;
-    color: var(--accent-hover);
-}
-
-.setting-item {
-    margin-bottom: 24px;
-}
-
-.setting-item label {
-    display: block;
-    font-size: 17px;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-}
-
-.settings-info {
-    font-size: 18px;
-    color: var(--text-secondary);
-    margin-bottom: 12px;
-}
-
-.settings-actions {
-    display: flex;
-    margin-top: 24px;
-}
-
-.settings-actions > * + * {
-    margin-left: 16px;
-}
-
-.remote-legend {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.remote-legend h4 {
-    font-size: 17px;
-    margin-bottom: 12px;
-}
-
-.remote-legend ul {
-    list-style: none;
-    font-size: 15px;
-    color: var(--text-secondary);
-}
-
-.remote-legend li {
-    margin-bottom: 8px;
-}
-
-/* Spinner y Loader Global */
-.global-loader {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    background: rgba(10, 10, 15, 0.85);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-}
-
-.global-loader > * + * {
-    margin-top: 20px;
-}
-
-.spinner {
-    width: 50px;
-    height: 50px;
-    border: 4px solid rgba(139, 92, 246, 0.2);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-.loader-text {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-/* Toast */
-.app-toast {
-    position: fixed;
-    bottom: 40px;
-    left: 50%;
-    transform: translateX(-50%) translateY(100px);
-    background: rgba(24, 24, 36, 0.95);
-    border: 1px solid var(--accent);
-    color: #fff;
-    padding: 14px 28px;
-    border-radius: 8px;
-    font-size: 18px;
-    font-weight: 600;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    z-index: 10000;
-    opacity: 0;
-    transition: transform 300ms ease, opacity 300ms ease;
-}
-
-.app-toast.is-active {
-    transform: translateX(-50%) translateY(0);
-    opacity: 1;
-}
-
-/* Ajustes para TV a escala 1280x720: el header no da para la leyenda duplicada de colores */
-.header-shortcuts {
-    display: none;
-}
-
-.header-nav-btn {
-    white-space: nowrap;
-}
-
-.app-main::-webkit-scrollbar {
-    display: none;
-}
-
-/* Reproductor nativo (<video>) */
 .player-video {
     position: absolute;
     top: 0;
@@ -931,6 +860,24 @@ body {
     background: #000;
     object-fit: contain;
     z-index: 1;
+}
+
+.player-loading-state {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 20px;
+}
+
+.player-loading-state .spinner {
+    margin-bottom: 18px;
 }
 
 .player-buffering {
@@ -946,11 +893,50 @@ body {
     display: block;
 }
 
+.player-osd {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 300ms ease;
+    z-index: 10;
+}
+
+.player-osd.is-visible {
+    opacity: 1;
+}
+
+.osd-top {
+    padding: 30px 48px 60px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0));
+}
+
+.osd-top h2 {
+    font-size: 28px;
+    font-weight: 800;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.osd-server {
+    font-size: 15px;
+    color: var(--text-dim);
+}
+
+.osd-bottom {
+    padding: 70px 48px 30px;
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0));
+}
+
 .osd-progress {
     display: none;
     align-items: center;
-    margin-top: auto;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
 }
 
 .osd-progress.is-visible {
@@ -959,9 +945,9 @@ body {
 
 .osd-progress-track {
     flex: 1;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.25);
-    border-radius: 4px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
     overflow: hidden;
 }
 
@@ -972,13 +958,186 @@ body {
 }
 
 .osd-progress-time {
-    margin-left: 16px;
-    font-size: 18px;
-    font-variant-numeric: tabular-nums;
+    margin-left: 18px;
+    font-size: 17px;
     min-width: 150px;
     text-align: right;
 }
 
-.osd-footer-hints {
+.osd-hints {
+    display: flex;
     flex-wrap: wrap;
+    font-size: 14px;
+    color: var(--text-dim);
+}
+
+.osd-hints span {
+    margin-right: 26px;
+}
+
+.osd-hints b {
+    color: #fff;
+}
+
+.player-next {
+    position: absolute;
+    right: 48px;
+    bottom: 120px;
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    padding: 18px 24px;
+    background: rgba(20, 20, 26, 0.95);
+    border-left: 4px solid var(--accent);
+    border-radius: var(--radius);
+}
+
+.player-next.is-visible {
+    display: flex;
+}
+
+.player-next-label {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.player-next-hint {
+    font-size: 14px;
+    color: var(--text-dim);
+}
+
+.player-server-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    padding: 22px 48px 34px;
+    background: rgba(10, 10, 14, 0.96);
+    transform: translateY(100%);
+    transition: transform 250ms var(--ease);
+}
+
+.player-server-bar.is-visible {
+    transform: translateY(0);
+}
+
+.server-bar-title {
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 14px;
+}
+
+.server-bar-title span {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-left: 12px;
+}
+
+.player-server-list {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.player-server-btn {
+    display: flex;
+    align-items: center;
+    padding: 10px 18px;
+    margin: 0 12px 10px 0;
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    border: 2px solid transparent;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.player-server-btn .server-num {
+    color: var(--text-muted);
+    margin-right: 8px;
+}
+
+.player-server-btn.is-active {
+    border-color: var(--accent);
+}
+
+.player-server-btn.has-focus {
+    background: #fff;
+    color: #000;
+    transform: scale(1.05);
+}
+
+.server-direct {
+    margin-left: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--success);
+    color: #000;
+}
+
+/* ---------- Toast, loader, spinner ---------- */
+.app-toast {
+    position: absolute;
+    left: 50%;
+    top: 40px;
+    transform: translate(-50%, -20px);
+    padding: 12px 24px;
+    border-radius: var(--radius);
+    background: rgba(30, 30, 38, 0.97);
+    font-size: 17px;
+    font-weight: 600;
+    z-index: 5000;
+    opacity: 0;
+    transition: opacity 200ms ease, transform 200ms ease;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.app-toast.is-active {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+.global-loader {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    background: rgba(11, 11, 15, 0.82);
+    z-index: 4000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.loader-text {
+    margin-top: 18px;
+    font-size: 18px;
+    color: var(--text-dim);
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid rgba(255, 255, 255, 0.15);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.row {
+    transition: opacity 200ms ease;
+}
+
+.row.is-above {
+    opacity: 0;
 }

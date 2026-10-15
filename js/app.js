@@ -10,12 +10,7 @@
             this.player = null;
             this.viewStack = [];
             this.currentRoute = '';
-            this.catalogFilters = {
-                estado: '',
-                genero: '',
-                orden: '',
-                tipo: ''
-            };
+            this.catalogFilters = {};
             this.catalogPage = 1;
             this.catalogHasNext = false;
             this.searchDebounceTimer = null;
@@ -46,6 +41,9 @@
             // Configurar atajos de teclas de colores
             this.nav.onColorKey = (code) => this.handleColorKey(code);
 
+            // El billboard de Inicio sigue a la tarjeta enfocada
+            this.nav.onFocusChange = (element) => window.TVUI.onFocus(element);
+
             // 4. Inicializar reproductor de TV
             this.player = new window.TVPlayer({
                 container: document.getElementById('player-viewport'),
@@ -55,7 +53,14 @@
                 titleEl: document.getElementById('player-title'),
                 serverLabelEl: document.getElementById('player-current-server'),
                 onEpisodeChange: (newUrl) => {
-                    this.navigate(`#/watch?url=${encodeURIComponent(newUrl)}`);
+                    // Reemplazar (no apilar) para que Atrás vuelva a la ficha y no al episodio anterior
+                    const ep = this.player.currentEpisode || {};
+                    this.navigate(this._watchRoute({
+                        url: newUrl,
+                        title: ep.animeTitle || ep.title || '',
+                        animeUrl: ep.animeUrl || '',
+                        img: ep.image || ''
+                    }), true);
                 },
                 onClose: () => {
                     this.handleBack();
@@ -90,6 +95,12 @@
         }
 
         handleBack() {
+            // Un selector de opciones abierto se cierra primero
+            if (window.TVPicker && window.TVPicker.isOpen()) {
+                window.TVPicker.close(true);
+                return;
+            }
+
             // Si el reproductor está activo, cerrarlo
             if (this.currentRoute.startsWith('#/watch')) {
                 this.player.destroy();
@@ -111,7 +122,13 @@
                 return;
             }
 
-            // Si estamos en home, confirmar salida de la aplicación
+            // En Inicio: pedir confirmación (Atrás dos veces seguidas para salir)
+            const now = Date.now();
+            if (!this._exitArmedAt || now - this._exitArmedAt > 2500) {
+                this._exitArmedAt = now;
+                window.TVUI.showToast('Presiona Atrás otra vez para salir');
+                return;
+            }
             if (typeof tizen !== 'undefined' && tizen.application) {
                 try {
                     tizen.application.getCurrentApplication().exit();
@@ -127,6 +144,9 @@
          * Manejador de teclas de colores Samsung
          */
         handleColorKey(code) {
+            // En el reproductor los colores los maneja el propio reproductor (servidores, saltar intro, visto)
+            if (this.currentRoute.startsWith('#/watch')) return;
+
             if (code === window.TVKeys.COLOR_RED) {
                 // Rojo: Búsqueda rápida
                 this.navigate('#/search');
@@ -134,23 +154,19 @@
                 // Verde: Catálogo
                 this.navigate('#/catalog');
             } else if (code === window.TVKeys.COLOR_YELLOW) {
-                // Amarillo: Servidores en reproductor o Ajustes
-                if (this.currentRoute.startsWith('#/watch')) {
-                    this.player.toggleServerBar();
-                } else {
-                    this.navigate('#/settings');
-                }
+                // Amarillo: Ajustes
+                this.navigate('#/settings');
             } else if (code === window.TVKeys.COLOR_BLUE) {
                 // Azul: Marcar visto/no visto en tarjeta enfocada
                 const focused = this.nav.currentFocus;
                 if (focused && focused.dataset.url) {
                     const isNowWatched = window.TVStorage.toggleWatched(focused.dataset.url);
                     window.TVUI.showToast(isNowWatched ? '✓ Marcado como visto' : '○ Marcado como no visto');
-                    // Actualizar badge visualmente
-                    let badge = focused.querySelector('.badge-watched');
+                    // Actualizar la marca en la tarjeta
+                    const badge = focused.querySelector('.card-watched');
                     if (isNowWatched && !badge) {
-                        const wrap = focused.querySelector('.episode-poster-wrap');
-                        if (wrap) wrap.insertAdjacentHTML('beforeend', '<span class="badge-watched">✓ VISTO</span>');
+                        const thumb = focused.querySelector('.card-thumb');
+                        if (thumb) thumb.insertAdjacentHTML('beforeend', '<span class="card-watched">✓ VISTO</span>');
                     } else if (!isNowWatched && badge) {
                         badge.remove();
                     }
@@ -158,8 +174,22 @@
             }
         }
 
-        navigate(route) {
+        /**
+         * Navega a una ruta; con replace la ruta actual se reemplaza en la pila de "Atrás"
+         */
+        navigate(route, replace) {
+            if (replace && this.viewStack.length) {
+                this.viewStack.pop();
+            }
             window.location.hash = route;
+        }
+
+        _watchRoute(params) {
+            const query = Object.keys(params)
+                .filter(k => params[k])
+                .map(k => `${k}=${encodeURIComponent(params[k])}`)
+                .join('&');
+            return `#/watch?${query}`;
         }
 
         _popView() {
@@ -177,6 +207,11 @@
          */
         async _handleRoute() {
             const hash = window.location.hash || '#/';
+
+            // Salir del reproductor por cualquier camino (no solo con Atrás) debe detener el video
+            if (this.currentRoute.startsWith('#/watch') && !hash.startsWith('#/watch') && this.player.isPlaying) {
+                this.player.destroy();
+            }
             this.currentRoute = hash;
 
             // Mantener historial de navegación para retroceso
@@ -206,6 +241,9 @@
                 case '/settings':
                     await this._loadSettingsView();
                     break;
+                case '/mylist':
+                    this._loadMyListView();
+                    break;
                 default:
                     await this._loadHomeView();
                     break;
@@ -234,7 +272,7 @@
             try {
                 const data = await window.TVScraper.getHomeContent();
                 window.TVUI.renderHome(data);
-                this.nav.refreshFocus();
+                this.nav.refreshFocus('.billboard-actions [data-focusable="true"]');
             } catch (err) {
                 window.TVUI.showToast(`Error cargando estrenos: ${err && err.message ? err.message : err}`);
             } finally {
@@ -262,7 +300,7 @@
             window.TVUI.showLoading(true, `Buscando "${query}"...`);
             try {
                 const results = await window.TVApi.search(query);
-                window.TVUI.renderSearchResults(results);
+                window.TVUI.renderSearchResults(results, query);
                 this.nav.refreshFocus('#search-results-grid [data-focusable="true"]');
             } catch (err) {
                 window.TVUI.showToast(`Error en la búsqueda: ${err && err.message ? err.message : err}`);
@@ -283,8 +321,9 @@
             try {
                 const data = await window.TVScraper.getCatalog(page, this.catalogFilters);
                 this.catalogHasNext = data.hasNext;
-                window.TVUI.renderCatalog(data, this.catalogFilters);
-                this.nav.refreshFocus();
+                window.TVUI.renderCatalogFilters(data.filters, this.catalogFilters);
+                window.TVUI.renderCatalog(data);
+                this.nav.refreshFocus('#catalog-results-grid [data-focusable="true"]');
             } catch (err) {
                 window.TVUI.showToast(`Error cargando catálogo: ${err && err.message ? err.message : err}`);
             } finally {
@@ -307,6 +346,7 @@
                 const anime = await window.TVScraper.getAnimeDetail(params.url);
                 window.TVUI.renderAnimeDetail(anime);
                 this.nav.refreshFocus('.detail-actions [data-focusable="true"]');
+                window.TVUI.switchView('anime'); // volver arriba tras renderizar
             } catch (err) {
                 window.TVUI.showToast(`Error al cargar la ficha del anime: ${err && err.message ? err.message : err}`);
             } finally {
@@ -331,7 +371,8 @@
                 title: params.title || '',
                 episode: params.ep || '',
                 animeTitle: params.animeTitle || params.title || '',
-                animeUrl: params.animeUrl || ''
+                animeUrl: params.animeUrl || '',
+                image: params.img || ''
             });
         }
 
@@ -341,7 +382,13 @@
         async _loadSettingsView() {
             window.TVUI.switchView('settings');
             window.TVUI.renderSettings();
-            this.nav.refreshFocus();
+            this.nav.refreshFocus('#settings-content [data-focusable="true"]');
+        }
+
+        _loadMyListView() {
+            window.TVUI.switchView('mylist');
+            window.TVUI.renderMyList();
+            this.nav.refreshFocus('#mylist-content [data-focusable="true"]');
         }
 
         /**
@@ -362,12 +409,23 @@
                     const url = target.dataset.url;
                     if (url) this.navigate(`#/anime?url=${encodeURIComponent(url)}`);
                 } else if (action === 'play-episode') {
-                    const url = target.dataset.url;
-                    const title = target.dataset.title || '';
-                    const ep = target.dataset.ep || '';
-                    if (url) {
-                        this.navigate(`#/watch?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&ep=${encodeURIComponent(ep)}`);
+                    if (target.dataset.url) {
+                        this.navigate(this._watchRoute({
+                            url: target.dataset.url,
+                            title: target.dataset.title || '',
+                            ep: target.dataset.ep || '',
+                            animeUrl: target.dataset.animeUrl || '',
+                            img: target.dataset.img || ''
+                        }));
                     }
+                } else if (action === 'toggle-favorite') {
+                    const added = window.TVStorage.toggleFavorite({
+                        url: target.dataset.url,
+                        title: target.dataset.title,
+                        image: target.dataset.img
+                    });
+                    target.textContent = added ? '✓ En mi lista' : '＋ Mi lista';
+                    window.TVUI.showToast(added ? 'Agregado a Mi lista' : 'Quitado de Mi lista');
                 } else if (action === 'catalog-next-page') {
                     if (!this.catalogHasNext) return;
                     this.catalogPage++;
@@ -431,13 +489,11 @@
             const filterForm = document.getElementById('catalog-filters-form');
             if (filterForm) {
                 filterForm.addEventListener('change', () => {
-                    const formData = new FormData(filterForm);
-                    this.catalogFilters = {
-                        estado: formData.get('estado') || '',
-                        genero: formData.get('genero') || '',
-                        orden: formData.get('orden') || '',
-                        tipo: formData.get('tipo') || ''
-                    };
+                    const filters = {};
+                    filterForm.querySelectorAll('select[name]').forEach(select => {
+                        if (select.value) filters[select.name] = select.value;
+                    });
+                    this.catalogFilters = filters;
                     this.catalogPage = 1;
                     // Volver a la página 1 también en la URL, para que "Atrás" no pida una página que ya no existe
                     if (window.location.hash !== '#/catalog') {
@@ -458,7 +514,8 @@
                     const updated = {};
                     updated[key] = val;
                     window.TVStorage.saveSettings(updated);
-                    window.TVUI.showToast(`Ajuste guardado: ${val}`);
+                    const option = settingEl.options ? settingEl.options[settingEl.selectedIndex] : null;
+                    window.TVUI.showToast(`Guardado: ${option ? option.textContent.trim() : val}`);
                 }
             });
         }

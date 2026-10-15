@@ -36,6 +36,16 @@
         return el && el.textContent ? el.textContent.trim() : '';
     }
 
+    // Texto con espacio entre nodos hijos: "<h1>Ken deshita<span>Temporada 2</span></h1>" -> "Ken deshita Temporada 2"
+    function joinedText(el) {
+        if (!el) return '';
+        return Array.from(el.childNodes)
+            .map(n => n.textContent.trim())
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ');
+    }
+
     function attrOf(el, name) {
         return el ? el.getAttribute(name) : null;
     }
@@ -139,14 +149,19 @@
             throw new Error(`ok.ru: ${movie.statusText || movie.status}`);
         }
 
-        // De mejor a peor calidad; MP4 progresivo es lo más compatible con el reproductor del TV
+        // De mejor a peor calidad; MP4 progresivo es lo más compatible con el reproductor del TV.
+        // Se parte de la calidad preferida en Ajustes y se baja si esa no existe.
         const QUALITY_ORDER = ['full', 'hd', 'sd', 'low', 'lowest', 'mobile'];
+        const PREFERRED_START = { '1080p': 'full', '720p': 'hd', '480p': 'sd', '360p': 'low' };
+        const settings = window.TVStorage ? window.TVStorage.getSettings() : {};
+        const startIdx = Math.max(0, QUALITY_ORDER.indexOf(PREFERRED_START[settings.preferredQuality] || 'full'));
+        const rank = (name) => {
+            const i = QUALITY_ORDER.indexOf(name);
+            if (i === -1) return 99;
+            return i >= startIdx ? i - startIdx : 50 + (startIdx - i); // por debajo de la preferida antes que por encima
+        };
         const videos = (metadata.videos || []).filter(v => v.url && !v.disallowed);
-        videos.sort((a, b) => {
-            const ia = QUALITY_ORDER.indexOf(a.name);
-            const ib = QUALITY_ORDER.indexOf(b.name);
-            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-        });
+        videos.sort((a, b) => rank(a.name) - rank(b.name));
 
         if (videos.length) {
             return { url: videos[0].url, type: 'video/mp4', quality: videos[0].name, poster: movie.poster || '' };
@@ -155,6 +170,24 @@
             return { url: metadata.ondemandHls, type: 'application/x-mpegURL', quality: 'hls', poster: movie.poster || '' };
         }
         throw new Error('ok.ru: el video no tiene fuentes reproducibles');
+    }
+
+    /**
+     * Filtros reales del catálogo (los <select> del sitio), para no tener listas desactualizadas
+     */
+    const CATALOG_FILTERS = ['genero', 'estado', 'anio', 'temporada', 'orden'];
+
+    function parseCatalogFilters(doc) {
+        const result = [];
+        CATALOG_FILTERS.forEach(function(name) {
+            const select = doc.querySelector(`select[name="${name}"]`);
+            if (!select) return;
+            const options = Array.from(select.querySelectorAll('option')).map(function(o) {
+                return { value: o.getAttribute('value') || '', label: textOf(o) };
+            });
+            if (options.length > 1) result.push({ name: name, options: options });
+        });
+        return result;
     }
 
     const DIRECT_RESOLVERS = [
@@ -199,12 +232,7 @@
             const slides = doc.querySelectorAll('article.aniyt-hero-slide[data-aniyt-hero-slide]');
             slides.forEach(function(slide) {
                 const titleEl = slide.querySelector('.aniyt-hero-content h2');
-                // Unir nodos hijos con espacio: "<h2>Ken deshita<span>Temporada 2</span></h2>"
-                const title = titleEl ? Array.from(titleEl.childNodes)
-                    .map(n => n.textContent.trim())
-                    .filter(Boolean)
-                    .join(' ')
-                    .replace(/\s+/g, ' ') : '';
+                const title = joinedText(titleEl);
                 const desc = textOf(slide.querySelector('.aniyt-hero-content p')) || '';
                 const imgEl = slide.querySelector('.aniyt-hero-art img');
                 const image = extractImageUrl(imgEl);
@@ -266,10 +294,9 @@
             }
 
             const queryParams = new URLSearchParams();
-            if (filters.estado) queryParams.set('estado', filters.estado);
-            if (filters.genero) queryParams.set('genero', filters.genero);
-            if (filters.orden) queryParams.set('orden', filters.orden);
-            if (filters.tipo) queryParams.set('tipo', filters.tipo);
+            Object.keys(filters).forEach(function(key) {
+                if (filters[key]) queryParams.set(key, filters[key]);
+            });
 
             const queryString = queryParams.toString();
             if (queryString) {
@@ -321,7 +348,8 @@
             return {
                 animes: animes,
                 currentPage: page,
-                hasNext: hasNext
+                hasNext: hasNext,
+                filters: parseCatalogFilters(doc)
             };
         },
 
@@ -334,7 +362,7 @@
 
             // Información general
             const titleEl = doc.querySelector('.aniyt-detail-copy h1') || doc.querySelector('.aniyt-detail-hero h1');
-            const title = titleEl ? titleEl.textContent.trim() : '';
+            const title = joinedText(titleEl);
             const synopsisEl = doc.querySelector('.aniyt-detail-synopsis p');
             const synopsis = synopsisEl ? synopsisEl.textContent.trim() : 'Sin sinopsis disponible.';
 
@@ -416,20 +444,22 @@
                 }
             }
 
-            // Datos de navegación del episodio
-            const navLinks = doc.querySelectorAll('.aniyt-watch-nav a');
+            // Navegación del episodio: los enlaces se identifican por su nombre ("Anterior", "Siguiente", "Lista"),
+            // no por posición (el primer episodio no tiene "Anterior" y el último no tiene "Siguiente")
             let prevUrl = null;
+            let nextUrl = null;
             let listUrl = null;
+            doc.querySelectorAll('.aniyt-watch-nav a').forEach(function(a) {
+                const label = ((a.getAttribute('aria-label') || '') + ' ' + textOf(a)).toLowerCase();
+                const href = resolveUrl(a.getAttribute('href'));
+                if (!href) return;
+                if (label.indexOf('anterior') !== -1) prevUrl = href;
+                else if (label.indexOf('siguiente') !== -1) nextUrl = href;
+                else if (label.indexOf('lista') !== -1) listUrl = href.split('#')[0];
+            });
 
-            if (navLinks.length >= 2) {
-                prevUrl = resolveUrl(attrOf(navLinks[0], 'href'));
-                listUrl = resolveUrl(attrOf(navLinks[1], 'href'));
-            } else if (navLinks.length === 1) {
-                listUrl = resolveUrl(attrOf(navLinks[0], 'href'));
-            }
-
-            const title = textOf(doc.querySelector('.aniyt-watch-info h2')) ||
-                          doc.title.split('·')[0].trim();
+            const title = textOf(doc.querySelector('h1')) ||
+                          doc.title.replace(/\s+Sub Español.*$/i, '').replace(/\s+-\s+AnimeYT$/i, '').trim();
             const synopsis = textOf(doc.querySelector('.aniyt-watch-synopsis-scroll p')) || '';
             const backdrop = resolveUrl(attrOf(playerShell, 'data-aniyt-context-backdrop'));
 
@@ -442,6 +472,7 @@
                 lang: lang,
                 only: only,
                 prevUrl: prevUrl,
+                nextUrl: nextUrl,
                 listUrl: listUrl
             };
         },

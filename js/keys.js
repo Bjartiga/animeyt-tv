@@ -51,13 +51,13 @@
          */
         registerKeys: function() {
             if (typeof tizen !== 'undefined' && tizen.tvinputdevice) {
+                // No registrar VolumeUp/VolumeDown/VolumeMute ni Exit: si la app los registra,
+                // el TV deja de manejarlos (el volumen no cambia y Exit no cierra la app)
                 const keys = [
                     'ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue',
                     'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
                     'MediaRewind', 'MediaFastForward', 'MediaTrackPrevious', 'MediaTrackNext',
-                    'Info', 'Exit', 'ChannelUp', 'ChannelDown',
-                    'VolumeUp', 'VolumeDown', 'VolumeMute',
-                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
+                    'Info', 'ChannelUp', 'ChannelDown'
                 ];
                 keys.forEach(function(keyName) {
                     try {

@@ -107,6 +107,12 @@
          * Carga y reproduce un episodio
          */
         async loadEpisode(episodeData) {
+            // Al pasar de un episodio a otro, guardar la posición del anterior antes de reemplazarlo
+            this._persistProgress(true);
+            this._hideNextPrompt();
+            this._teardownMedia();
+            if (this.isServerBarVisible) this.toggleServerBar();
+
             this.currentEpisode = episodeData;
             this.isPlaying = true;
 
@@ -125,7 +131,14 @@
                 }
 
                 this.currentEpisode.prevUrl = containerInfo.prevUrl;
+                this.currentEpisode.nextUrl = containerInfo.nextUrl;
                 this.currentEpisode.listUrl = containerInfo.listUrl;
+                if (!this.currentEpisode.animeUrl) this.currentEpisode.animeUrl = containerInfo.listUrl || '';
+                if (!this.currentEpisode.image) this.currentEpisode.image = containerInfo.backdrop || '';
+                if (containerInfo.title && this.titleEl) {
+                    this.titleEl.textContent = containerInfo.title;
+                    this.currentEpisode.fullTitle = containerInfo.title;
+                }
 
                 // 2. Extraer servidores limpios desde Mytsumi sin anuncios
                 const { servers } = await window.TVScraper.getVideoServers(
@@ -169,11 +182,11 @@
                 // Guardar en historial
                 if (window.TVStorage) {
                     window.TVStorage.addToHistory({
-                        title: episodeData.animeTitle || episodeData.title,
-                        episode: episodeData.episode,
+                        title: episodeData.animeTitle || episodeData.title || containerInfo.title,
+                        episode: episodeData.episode || containerInfo.title,
                         url: episodeData.url,
-                        animeUrl: episodeData.animeUrl || containerInfo.listUrl,
-                        image: episodeData.image
+                        animeUrl: this.currentEpisode.animeUrl,
+                        image: this.currentEpisode.image
                     });
                 }
 
@@ -254,11 +267,18 @@
                     video.addEventListener('waiting', () => this._setBuffering(true));
                     video.addEventListener('playing', () => this._setBuffering(false));
                     video.addEventListener('canplay', () => this._setBuffering(false));
-                    video.addEventListener('timeupdate', () => this._updateProgress());
-                    video.addEventListener('pause', () => this._showOSD());
-                    video.addEventListener('ended', () => {
-                        this._showNotification('Episodio terminado');
+                    video.addEventListener('loadedmetadata', () => this._resumeFromProgress());
+                    video.addEventListener('timeupdate', () => {
+                        this._updateProgress();
+                        this._persistProgress(false);
+                    });
+                    video.addEventListener('pause', () => {
+                        this._persistProgress(true);
                         this._showOSD();
+                    });
+                    video.addEventListener('ended', () => {
+                        this._persistProgress(true);
+                        this._onEnded();
                     });
 
                     const source = document.createElement('source');
@@ -360,6 +380,94 @@
             if (time) time.textContent = `${this._formatTime(current)} / ${this._formatTime(duration)}`;
         }
 
+        /**
+         * Reanudar donde se dejó (si quedó a medias)
+         */
+        _resumeFromProgress() {
+            if (!this.video || !window.TVStorage || !this.currentEpisode) return;
+            const saved = window.TVStorage.getProgress(this.currentEpisode.url);
+            const duration = this.video.duration;
+            if (saved && saved.time > 30 && isFinite(duration) && saved.time < duration - 60) {
+                this.video.currentTime = saved.time;
+                this._showNotification(`Reanudando en ${this._formatTime(saved.time)}`);
+            }
+        }
+
+        /**
+         * Guarda la posición (cada ~5s o forzado) y marca visto al pasar el 90%
+         */
+        _persistProgress(force) {
+            if (!this.video || !window.TVStorage || !this.currentEpisode) return;
+            const now = Date.now();
+            if (!force && this._lastProgressSave && now - this._lastProgressSave < 5000) return;
+            this._lastProgressSave = now;
+
+            const time = this.video.currentTime;
+            const duration = this.video.duration;
+            if (!isFinite(duration) || duration <= 0) return;
+
+            window.TVStorage.saveProgress(this.currentEpisode.url, time, duration);
+            if (time / duration >= 0.9 && !window.TVStorage.isWatched(this.currentEpisode.url)) {
+                window.TVStorage.setWatched(this.currentEpisode.url, true);
+            }
+        }
+
+        /**
+         * Fin del episodio: cuenta regresiva al siguiente (si está activado en Ajustes)
+         */
+        _onEnded() {
+            const settings = window.TVStorage ? window.TVStorage.getSettings() : {};
+            const nextUrl = this.currentEpisode && this.currentEpisode.nextUrl;
+            if (!nextUrl) {
+                this._showNotification('Último episodio disponible');
+                this._showOSD();
+                return;
+            }
+            if (settings.autoNext === false || settings.autoNext === 'false') {
+                this._showNextPrompt(nextUrl, 0);
+                return;
+            }
+            this._showNextPrompt(nextUrl, 10);
+        }
+
+        _showNextPrompt(nextUrl, seconds) {
+            const box = document.getElementById('player-next');
+            const label = document.getElementById('player-next-label');
+            if (!box) return;
+            this._nextPromptUrl = nextUrl;
+            box.classList.add('is-visible');
+
+            let remaining = seconds;
+            const render = () => {
+                if (label) label.textContent = remaining > 0 ? `Siguiente episodio en ${remaining}s` : 'Siguiente episodio';
+            };
+            render();
+            clearInterval(this._nextTimer);
+            if (seconds > 0) {
+                this._nextTimer = setInterval(() => {
+                    remaining--;
+                    render();
+                    if (remaining <= 0) this._goToNext();
+                }, 1000);
+            }
+        }
+
+        _hideNextPrompt() {
+            clearInterval(this._nextTimer);
+            this._nextTimer = null;
+            this._nextPromptUrl = null;
+            const box = document.getElementById('player-next');
+            if (box) box.classList.remove('is-visible');
+        }
+
+        _goToNext() {
+            const url = this._nextPromptUrl || (this.currentEpisode && this.currentEpisode.nextUrl);
+            this._hideNextPrompt();
+            if (url && typeof this.onEpisodeChange === 'function') {
+                this.onEpisodeChange(url);
+            }
+        }
+
         _seekBy(seconds) {
             if (!this.video) return;
             const duration = isFinite(this.video.duration) ? this.video.duration : Infinity;
@@ -428,9 +536,11 @@
                 btn.className = `player-server-btn ${index === this.currentServerIndex ? 'is-active' : ''}`;
                 btn.setAttribute('data-focusable', 'true');
                 btn.setAttribute('data-server-index', index);
+                const direct = window.TVScraper.canPlayDirect(server);
                 btn.innerHTML = `
                     <span class="server-num">${index + 1}</span>
                     <span class="server-name">${server.label}</span>
+                    ${direct ? '<span class="server-direct">SIN ANUNCIOS</span>' : ''}
                 `;
 
                 btn.addEventListener('click', () => {
@@ -473,10 +583,16 @@
             this._updateNavigationLock();
             if (this.serverBar) {
                 this.serverBar.classList.toggle('is-visible', this.isServerBarVisible);
-                if (this.isServerBarVisible && window.appNavigation) {
+                const nav = window.appNavigation;
+                if (this.isServerBarVisible && nav) {
                     // Enfocar el botón del servidor activo
-                    window.appNavigation.refreshFocus('.player-server-btn.is-active');
+                    nav.refreshFocus('.player-server-btn.is-active');
                 } else {
+                    // Al cerrar, soltar el foco de los botones ocultos de la barra
+                    if (nav && nav.currentFocus && this.serverBar.contains(nav.currentFocus)) {
+                        nav.currentFocus.classList.remove('has-focus');
+                        nav.currentFocus = null;
+                    }
                     window.focus();
                 }
             }
@@ -537,8 +653,35 @@
                 return;
             }
 
-            // Controles del reproductor nativo (con la barra de servidores oculta)
             const K = window.TVKeys || {};
+
+            // Aviso "Siguiente episodio": OK lo reproduce ya, cualquier otra tecla lo cancela
+            if (this._nextPromptUrl) {
+                e.preventDefault();
+                if (code === K.ENTER || code === K.PLAY || code === K.PLAY_PAUSE || code === K.CHANNEL_UP) {
+                    this._goToNext();
+                } else {
+                    this._hideNextPrompt();
+                    this._showNotification('Siguiente episodio cancelado');
+                }
+                return;
+            }
+
+            // Barra de servidores abierta: ▲ la cierra (no hay nada más arriba a donde moverse)
+            if (this.isServerBarVisible && code === K.UP) {
+                e.preventDefault();
+                this.toggleServerBar();
+                return;
+            }
+
+            // Verde: saltar intro (+85s)
+            if (this.video && !this.isServerBarVisible && code === K.COLOR_GREEN) {
+                e.preventDefault();
+                this._seekBy(85);
+                return;
+            }
+
+            // Controles del reproductor nativo (con la barra de servidores oculta)
             if (this.video && !this.isServerBarVisible) {
                 if (code === K.ENTER || code === K.PLAY_PAUSE || code === K.PLAY || code === K.PAUSE) {
                     e.preventDefault();
@@ -621,6 +764,9 @@
             this._stopFocusKeeper();
 
             window.removeEventListener('keydown', this._handlePlayerKeys, true);
+
+            this._persistProgress(true);
+            this._hideNextPrompt();
 
             // isPlaying ya es false: esto también devuelve las flechas a la navegación
             this._teardownMedia();

@@ -12,6 +12,7 @@
             this.enabled = true;
             this.onBack = null;
             this.onColorKey = null;
+            this.onFocusChange = null;
 
             this._handleKeyDown = this._handleKeyDown.bind(this);
             window.addEventListener('keydown', this._handleKeyDown, true);
@@ -48,7 +49,11 @@
          * Obtiene todos los elementos enfocables visibles en pantalla
          */
         getFocusableElements() {
-            const all = Array.from(document.querySelectorAll(this.selector));
+            // Un panel abierto con data-nav-scope (barra de servidores, selector de opciones)
+            // atrapa el foco: solo se navega dentro de él
+            const scopes = document.querySelectorAll('[data-nav-scope].is-open, [data-nav-scope].is-visible');
+            const root = scopes.length ? scopes[scopes.length - 1] : document;
+            const all = Array.from(root.querySelectorAll(this.selector));
             return all.filter(el => {
                 // Descartar elementos dentro de vistas ocultas
                 if (el.closest('.view.hidden') || el.closest('[hidden]')) return false;
@@ -70,13 +75,47 @@
             this.currentFocus = element;
             this.currentFocus.classList.add('has-focus');
 
-            if (scroll) {
+            // Recordar la última tarjeta enfocada de cada fila (al volver a la fila se retoma ahí)
+            const row = element.closest('[data-nav-row]');
+            if (row) row._lastFocus = element;
+
+            if (typeof this.onFocusChange === 'function') {
+                this.onFocusChange(element);
+            }
+
+            if (scroll && !this._scrollRow(element)) {
                 this.currentFocus.scrollIntoView({
                     behavior: 'auto', // smooth es muy costoso en el GPU del TV
                     block: 'center',
                     inline: 'center'
                 });
             }
+        }
+
+        /**
+         * Filas horizontales (estilo Netflix): desplaza la fila con transform para que la tarjeta quede
+         * visible, y si la fila está dentro de un [data-nav-scroller] sube la fila hasta el ancla.
+         * Devuelve false si el elemento no está en una fila con pista.
+         */
+        _scrollRow(element) {
+            const row = element.closest('[data-nav-row]');
+            const track = row ? row.querySelector('[data-row-track]') : null;
+            if (!track) return false;
+
+            const viewportWidth = track.parentNode.clientWidth -
+                parseFloat(getComputedStyle(track.parentNode).paddingLeft) -
+                parseFloat(getComputedStyle(track.parentNode).paddingRight);
+            const maxOffset = Math.max(0, track.scrollWidth - viewportWidth);
+            const offset = Math.max(0, Math.min(element.offsetLeft - track.offsetLeft, maxOffset));
+            track.style.transform = `translateX(${-offset}px)`;
+
+            const scroller = row.closest('[data-nav-scroller]');
+            if (scroller && scroller.firstElementChild) {
+                const anchor = parseInt(scroller.dataset.navAnchor || '0', 10);
+                const y = Math.max(0, row.offsetTop - anchor);
+                scroller.firstElementChild.style.transform = `translateY(${-y}px)`;
+            }
+            return true;
         }
 
         /**
@@ -120,13 +159,29 @@
                 }
             });
 
+            let best;
             if (!filtered.length) {
                 // Fallback con tolerancia geométrica más amplia si no hay en cono directo
-                return this._fallbackFind(current, direction, candidates);
+                best = this._fallbackFind(current, direction, candidates);
+            } else {
+                // Seleccionar el más cercano mediante ponderación euclidiana
+                best = this._closest(filtered, cCenter);
             }
 
-            // Seleccionar el más cercano mediante ponderación euclidiana
-            return filtered.reduce((closest, el) => {
+            // Al saltar a otra fila (arriba/abajo) retomar la tarjeta donde se quedó
+            if (best && (direction === 'UP' || direction === 'DOWN')) {
+                const targetRow = best.closest('[data-nav-row]');
+                const currentRow = current.closest('[data-nav-row]');
+                if (targetRow && targetRow !== currentRow && targetRow._lastFocus &&
+                    targetRow.contains(targetRow._lastFocus) && candidates.indexOf(targetRow._lastFocus) !== -1) {
+                    return targetRow._lastFocus;
+                }
+            }
+            return best;
+        }
+
+        _closest(elements, cCenter) {
+            return elements.reduce((closest, el) => {
                 const rect = el.getBoundingClientRect();
                 const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
                 const dist = Math.hypot(center.x - cCenter.x, center.y - cCenter.y);
