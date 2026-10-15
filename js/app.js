@@ -17,6 +17,7 @@
                 tipo: ''
             };
             this.catalogPage = 1;
+            this.catalogHasNext = false;
             this.searchDebounceTimer = null;
         }
 
@@ -281,6 +282,7 @@
             window.TVUI.showLoading(true, `Cargando catálogo página ${page}...`);
             try {
                 const data = await window.TVScraper.getCatalog(page, this.catalogFilters);
+                this.catalogHasNext = data.hasNext;
                 window.TVUI.renderCatalog(data, this.catalogFilters);
                 this.nav.refreshFocus();
             } catch (err) {
@@ -367,6 +369,7 @@
                         this.navigate(`#/watch?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&ep=${encodeURIComponent(ep)}`);
                     }
                 } else if (action === 'catalog-next-page') {
+                    if (!this.catalogHasNext) return;
                     this.catalogPage++;
                     this.navigate(`#/catalog?page=${this.catalogPage}`);
                 } else if (action === 'catalog-prev-page') {
@@ -436,7 +439,12 @@
                         tipo: formData.get('tipo') || ''
                     };
                     this.catalogPage = 1;
-                    this._loadCatalogView({ page: 1 });
+                    // Volver a la página 1 también en la URL, para que "Atrás" no pida una página que ya no existe
+                    if (window.location.hash !== '#/catalog') {
+                        this.navigate('#/catalog');
+                    } else {
+                        this._loadCatalogView({ page: 1 });
+                    }
                 });
             }
 

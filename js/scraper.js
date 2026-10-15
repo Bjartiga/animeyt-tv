@@ -99,7 +99,11 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                    // Un 404 es una respuesta definitiva (p. ej. página fuera de rango): no reintentar
+                    const httpError = new Error(`HTTP ${response.status}`);
+                    httpError.status = response.status;
+                    clearTimeout(timeoutId);
+                    throw httpError;
                 }
 
                 const html = await response.text();
@@ -107,6 +111,7 @@
                 return new DOMParser().parseFromString(html, 'text/html');
             } catch (err) {
                 clearTimeout(timeoutId);
+                if (err.status === 404) throw err;
                 lastError = err.name === 'AbortError' ? new Error('Tiempo de espera agotado') : err;
                 console.error(`[TVScraper] Intento ${attempt} fallido para:`, url, err);
             }
@@ -207,7 +212,16 @@
                 url += `?${queryString}`;
             }
 
-            const doc = await fetchCleanHTML(url);
+            let doc;
+            try {
+                doc = await fetchCleanHTML(url);
+            } catch (err) {
+                // WordPress responde 404 cuando la página no existe para esos filtros: es "sin resultados"
+                if (err.status === 404) {
+                    return { animes: [], currentPage: page, hasNext: false };
+                }
+                throw err;
+            }
             const cards = doc.querySelectorAll('article.aniyt-anime-card');
             const animes = [];
 

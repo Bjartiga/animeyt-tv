@@ -176,6 +176,7 @@
 
             if (!data.animes || !data.animes.length) {
                 container.innerHTML = '<p class="empty-msg">No se encontraron animes con los filtros seleccionados.</p>';
+                if (paginationEl) paginationEl.innerHTML = '';
                 return;
             }
 
