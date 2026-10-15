@@ -18,6 +18,50 @@ var HOST = '127.0.0.1';
 var ALLOWED_HOSTS = /(^|\.)(animeyt\.cc|mytsumi\.com)$/i;
 var USER_AGENT = 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.5) AppleWebKit/537.36 (KHTML, like Gecko) Version/5.5 TV Safari/537.36';
 
+// Reusar conexiones TLS: el handshake es lo más lento en el CPU del TV
+var httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 6 });
+var httpAgent = new http.Agent({ keepAlive: true, maxSockets: 6 });
+
+// Caché en memoria de respuestas ya descomprimidas y limpias
+var CACHE_TTL_MS = 5 * 60 * 1000;
+var CACHE_MAX_ENTRIES = 40;
+var cache = new Map();
+
+function cacheGet(key) {
+    var entry = cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.time > CACHE_TTL_MS) {
+        cache.delete(key);
+        return null;
+    }
+    return entry;
+}
+
+function cacheSet(key, entry) {
+    if (cache.size >= CACHE_MAX_ENTRIES) {
+        cache.delete(cache.keys().next().value);
+    }
+    entry.time = Date.now();
+    cache.set(key, entry);
+}
+
+// La app solo lee el DOM: quitar scripts, estilos y SVG reduce ~1/3 lo que el TV parsea
+function stripHtml(html) {
+    return html
+        .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+        .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+        .replace(/<svg\b[\s\S]*?<\/svg>/gi, '');
+}
+
+function sendEntry(res, entry) {
+    setCorsHeaders(res);
+    res.writeHead(entry.status, {
+        'Content-Type': entry.contentType,
+        'Content-Length': entry.body.length
+    });
+    res.end(entry.body);
+}
+
 function setCorsHeaders(res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -34,7 +78,7 @@ function sendError(res, status, message) {
     res.end(message);
 }
 
-function handleProxy(targetUrl, clientReq, clientRes, redirectCount) {
+function handleProxy(targetUrl, clientReq, clientRes, redirectCount, cacheKey) {
     if (redirectCount > 5) {
         sendError(clientRes, 502, 'Demasiadas redirecciones');
         return;
@@ -55,6 +99,7 @@ function handleProxy(targetUrl, clientReq, clientRes, redirectCount) {
         port: parsed.port || (isHttps ? 443 : 80),
         path: parsed.path,
         method: 'GET',
+        agent: isHttps ? httpsAgent : httpAgent,
         headers: {
             'User-Agent': USER_AGENT,
             'Accept': clientReq.headers['accept'] || '*/*',
@@ -66,27 +111,36 @@ function handleProxy(targetUrl, clientReq, clientRes, redirectCount) {
         var status = proxyRes.statusCode;
         if ((status === 301 || status === 302 || status === 303 || status === 307 || status === 308) && proxyRes.headers.location) {
             proxyRes.resume();
-            handleProxy(urlModule.resolve(targetUrl, proxyRes.headers.location), clientReq, clientRes, redirectCount + 1);
+            handleProxy(urlModule.resolve(targetUrl, proxyRes.headers.location), clientReq, clientRes, redirectCount + 1, cacheKey);
             return;
         }
 
-        setCorsHeaders(clientRes);
-        if (proxyRes.headers['content-type']) {
-            clientRes.setHeader('Content-Type', proxyRes.headers['content-type']);
-        }
-        clientRes.writeHead(status);
-
+        var stream = proxyRes;
         var encoding = proxyRes.headers['content-encoding'];
         if (encoding === 'gzip') {
-            proxyRes.pipe(zlib.createGunzip()).pipe(clientRes);
+            stream = proxyRes.pipe(zlib.createGunzip());
         } else if (encoding === 'deflate') {
-            proxyRes.pipe(zlib.createInflate()).pipe(clientRes);
-        } else {
-            proxyRes.pipe(clientRes);
+            stream = proxyRes.pipe(zlib.createInflate());
         }
+
+        var chunks = [];
+        stream.on('data', function(chunk) { chunks.push(chunk); });
+        stream.on('error', function(err) { sendError(clientRes, 502, 'Error descomprimiendo: ' + err.message); });
+        stream.on('end', function() {
+            var contentType = proxyRes.headers['content-type'] || 'application/octet-stream';
+            var body = Buffer.concat(chunks);
+            if (/text\/html/i.test(contentType)) {
+                body = new Buffer(stripHtml(body.toString('utf8')), 'utf8');
+            }
+            var entry = { status: status, contentType: contentType, body: body };
+            if (status === 200) {
+                cacheSet(cacheKey, entry);
+            }
+            sendEntry(clientRes, entry);
+        });
     });
 
-    proxyReq.setTimeout(15000, function() {
+    proxyReq.setTimeout(25000, function() {
         proxyReq.abort();
         sendError(clientRes, 504, 'Timeout');
     });
@@ -115,7 +169,13 @@ var server = http.createServer(function(req, res) {
     }
 
     if (parsed.pathname === '/proxy' && parsed.query.url) {
-        handleProxy(String(parsed.query.url), req, res, 0);
+        var target = String(parsed.query.url);
+        var cached = cacheGet(target);
+        if (cached) {
+            sendEntry(res, cached);
+            return;
+        }
+        handleProxy(target, req, res, 0, target);
         return;
     }
 

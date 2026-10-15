@@ -72,7 +72,7 @@
 
             if (scroll) {
                 this.currentFocus.scrollIntoView({
-                    behavior: 'smooth',
+                    behavior: 'auto', // smooth es muy costoso en el GPU del TV
                     block: 'center',
                     inline: 'center'
                 });

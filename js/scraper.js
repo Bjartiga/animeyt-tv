@@ -80,34 +80,39 @@
      * Realiza un fetch limpio y parsea a Document HTML sin ejecutar scripts
      */
     async function fetchCleanHTML(url) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-        const targetFetchUrl = window.TVNet.url(url);
+        // El CPU del TV es lento: timeout amplio y un reintento ante fallos de red o timeout
+        const MAX_ATTEMPTS = 2;
+        let lastError = null;
 
-        try {
-            const response = await fetch(targetFetchUrl, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-                },
-                credentials: window.TVNet.credentials(),
-                signal: controller.signal
-            });
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-            clearTimeout(timeoutId);
+            try {
+                const response = await fetch(window.TVNet.url(url), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                    },
+                    credentials: window.TVNet.credentials(),
+                    signal: controller.signal
+                });
 
-            if (!response.ok) {
-                throw new Error(`HTTP Error ${response.status} en ${url}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const html = await response.text();
+                clearTimeout(timeoutId);
+                return new DOMParser().parseFromString(html, 'text/html');
+            } catch (err) {
+                clearTimeout(timeoutId);
+                lastError = err.name === 'AbortError' ? new Error('Tiempo de espera agotado') : err;
+                console.error(`[TVScraper] Intento ${attempt} fallido para:`, url, err);
             }
-
-            const html = await response.text();
-            const parser = new DOMParser();
-            return parser.parseFromString(html, 'text/html');
-        } catch (err) {
-            clearTimeout(timeoutId);
-            console.error('[TVScraper] Error al obtener HTML de:', url, err);
-            throw err;
         }
+
+        throw lastError;
     }
 
     const TVScraper = {
@@ -125,7 +130,12 @@
             const slides = doc.querySelectorAll('article.aniyt-hero-slide[data-aniyt-hero-slide]');
             slides.forEach(function(slide) {
                 const titleEl = slide.querySelector('.aniyt-hero-content h2');
-                const title = titleEl ? titleEl.textContent.trim().replace(/\s+/g, ' ') : '';
+                // Unir nodos hijos con espacio: "<h2>Ken deshita<span>Temporada 2</span></h2>"
+                const title = titleEl ? Array.from(titleEl.childNodes)
+                    .map(n => n.textContent.trim())
+                    .filter(Boolean)
+                    .join(' ')
+                    .replace(/\s+/g, ' ') : '';
                 const desc = textOf(slide.querySelector('.aniyt-hero-content p')) || '';
                 const imgEl = slide.querySelector('.aniyt-hero-art img');
                 const image = extractImageUrl(imgEl);

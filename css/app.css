@@ -28,21 +28,28 @@
     -webkit-user-select: none;
 }
 
+/* La UI se diseña en un lienzo de 1280x720 y js/app.js lo escala a la pantalla (1.5x en 1920x1080) */
+html {
+    background-color: var(--bg-primary);
+    overflow: hidden;
+}
+
 body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'SamsungOne', sans-serif;
     font-size: 20px;
     line-height: 1.4;
-    width: 100vw;
-    height: 100vh;
+    width: 1280px;
+    height: 720px;
     overflow: hidden;
     position: relative;
+    transform-origin: 0 0;
 }
 
 /* Indicador de Foco Global para Navegación con Control Remoto */
 [data-focusable="true"] {
-    transition: transform var(--transition), outline var(--transition), box-shadow var(--transition);
+    transition: transform var(--transition);
     outline: 3px solid transparent;
     outline-offset: 3px;
 }
@@ -50,7 +57,6 @@ body {
 [data-focusable="true"].has-focus {
     outline-color: var(--accent);
     transform: scale(1.05);
-    box-shadow: 0 12px 28px var(--accent-glow);
     z-index: 20;
 }
 
@@ -73,7 +79,10 @@ body {
 .brand-container {
     display: flex;
     align-items: center;
-    gap: 16px;
+}
+
+.brand-container > * + * {
+    margin-left: 16px;
 }
 
 .brand-logo {
@@ -103,7 +112,10 @@ body {
 
 .header-nav {
     display: flex;
-    gap: 12px;
+}
+
+.header-nav > * + * {
+    margin-left: 12px;
 }
 
 .header-nav-btn {
@@ -117,7 +129,10 @@ body {
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 8px;
+}
+
+.header-nav-btn > * + * {
+    margin-left: 8px;
 }
 
 .header-nav-btn.is-active {
@@ -128,15 +143,21 @@ body {
 .header-shortcuts {
     display: flex;
     align-items: center;
-    gap: 16px;
     font-size: 15px;
     color: var(--text-muted);
+}
+
+.header-shortcuts > * + * {
+    margin-left: 16px;
 }
 
 .key-hint {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+}
+
+.key-hint > * + * {
+    margin-left: 4px;
 }
 
 .key-hint.red { color: #f87171; }
@@ -211,7 +232,10 @@ body {
 
 .hero-actions {
     display: flex;
-    gap: 16px;
+}
+
+.hero-actions > * + * {
+    margin-left: 16px;
 }
 
 /* Botones */
@@ -225,7 +249,10 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+}
+
+.btn > * + * {
+    margin-left: 8px;
 }
 
 .btn-primary {
@@ -284,12 +311,16 @@ body {
 .episode-poster-wrap {
     position: relative;
     width: 100%;
-    aspect-ratio: 16 / 9;
+    height: 0;
+    padding-top: 56.25%; /* 16:9 */
     background: #111;
     overflow: hidden;
 }
 
 .episode-poster-wrap img {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -322,7 +353,10 @@ body {
 
 .play-overlay {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: rgba(0, 0, 0, 0.4);
     display: flex;
     align-items: center;
@@ -367,12 +401,16 @@ body {
 .anime-poster-wrap {
     position: relative;
     width: 100%;
-    aspect-ratio: 2 / 3;
+    height: 0;
+    padding-top: 150%; /* 2:3 */
     background: #111;
     overflow: hidden;
 }
 
 .anime-poster-wrap img {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -424,9 +462,12 @@ body {
 /* Vista Búsqueda */
 .search-bar-container {
     display: flex;
-    gap: 16px;
     margin-bottom: 32px;
     max-width: 900px;
+}
+
+.search-bar-container > * + * {
+    margin-left: 16px;
 }
 
 .search-input-wrap {
@@ -455,7 +496,6 @@ body {
 .catalog-filters-form {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
     margin-bottom: 32px;
     background: var(--bg-card);
     padding: 20px 24px;
@@ -463,10 +503,17 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.catalog-filters-form > * {
+    margin: 0 16px 16px 0;
+}
+
 .filter-group {
     display: flex;
     align-items: center;
-    gap: 10px;
+}
+
+.filter-group > * + * {
+    margin-left: 10px;
 }
 
 .filter-group label {
@@ -488,8 +535,11 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 24px;
     margin-top: 48px;
+}
+
+.pagination-controls > * + * {
+    margin-left: 24px;
 }
 
 .page-indicator {
@@ -509,7 +559,10 @@ body {
 
 .anime-detail-header {
     display: flex;
-    gap: 40px;
+}
+
+.anime-detail-header > * + * {
+    margin-left: 40px;
 }
 
 .anime-poster-col {
@@ -537,8 +590,11 @@ body {
 .detail-genres {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
     margin-bottom: 20px;
+}
+
+.detail-genres > * {
+    margin: 0 8px 8px 0;
 }
 
 .genre-chip {
@@ -561,39 +617,54 @@ body {
 
 .detail-actions {
     display: flex;
-    gap: 16px;
+}
+
+.detail-actions > * + * {
+    margin-left: 16px;
 }
 
 /* Vista Reproductor de Video (Watch) */
 #view-watch {
     padding: 0;
     position: fixed;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: #000;
     z-index: 1000;
 }
 
 .player-viewport {
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
     position: relative;
     background: #000;
 }
 
 .player-loading-state {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 16px;
     color: var(--text-secondary);
+}
+
+.player-loading-state > * + * {
+    margin-top: 16px;
 }
 
 .player-osd {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -630,10 +701,13 @@ body {
 .osd-footer-hints {
     display: flex;
     justify-content: center;
-    gap: 32px;
     background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, transparent 100%);
     margin: 0 -48px -32px;
     padding: 24px 48px 32px;
+}
+
+.osd-footer-hints > * + * {
+    margin-left: 32px;
 }
 
 .player-server-bar {
@@ -663,8 +737,11 @@ body {
 
 .player-server-list {
     display: flex;
-    gap: 16px;
     overflow-x: auto;
+}
+
+.player-server-list > * + * {
+    margin-left: 16px;
 }
 
 .player-server-btn {
@@ -678,7 +755,10 @@ body {
     font-weight: 600;
     display: flex;
     align-items: center;
-    gap: 12px;
+}
+
+.player-server-btn > * + * {
+    margin-left: 12px;
 }
 
 .player-server-btn.is-active {
@@ -738,8 +818,11 @@ body {
 
 .settings-actions {
     display: flex;
-    gap: 16px;
     margin-top: 24px;
+}
+
+.settings-actions > * + * {
+    margin-left: 16px;
 }
 
 .remote-legend {
@@ -766,14 +849,20 @@ body {
 /* Spinner y Loader Global */
 .global-loader {
     position: fixed;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: rgba(10, 10, 15, 0.85);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 20px;
     z-index: 9999;
+}
+
+.global-loader > * + * {
+    margin-top: 20px;
 }
 
 .spinner {
@@ -817,4 +906,17 @@ body {
 .app-toast.is-active {
     transform: translateX(-50%) translateY(0);
     opacity: 1;
+}
+
+/* Ajustes para TV a escala 1280x720: el header no da para la leyenda duplicada de colores */
+.header-shortcuts {
+    display: none;
+}
+
+.header-nav-btn {
+    white-space: nowrap;
+}
+
+.app-main::-webkit-scrollbar {
+    display: none;
 }

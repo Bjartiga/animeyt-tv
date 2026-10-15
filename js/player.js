@@ -210,7 +210,7 @@
             iframe.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
             iframe.setAttribute('frameborder', '0');
             iframe.setAttribute('scrolling', 'no');
-            iframe.style.cssText = 'width: 100vw; height: 100vh; border: none; background: #000; position: absolute; top: 0; left: 0; z-index: 1;';
+            iframe.style.cssText = 'width: 100%; height: 100%; border: none; background: #000; position: absolute; top: 0; left: 0; z-index: 1;';
             iframe.src = targetUrl;
 
             this.container.innerHTML = '';
@@ -231,7 +231,7 @@
             if (this.shield) this.shield.remove();
             const shield = document.createElement('div');
             shield.className = 'player-shield';
-            shield.style.cssText = 'position: absolute; inset: 0; z-index: 2; pointer-events: none;';
+            shield.style.cssText = 'position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 2; pointer-events: none;';
             this.container.appendChild(shield);
             this.shield = shield;
         }

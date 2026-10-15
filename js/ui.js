@@ -62,7 +62,8 @@
 
             // Hero destacados
             if (data.hero && data.hero.length > 0) {
-                const hero = data.hero[0];
+                // El primer slide de AnimeYT suele ser un banner sin imagen; preferir uno con arte
+                const hero = data.hero.find(h => h.image) || data.hero[0];
                 html += `
                     <section class="home-hero" style="background-image: linear-gradient(to right, rgba(10,10,15,0.95) 30%, rgba(10,10,15,0.4)), url('${hero.image || ''}')">
                         <div class="hero-details">

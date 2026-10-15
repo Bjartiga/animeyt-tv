@@ -23,6 +23,10 @@
         async init() {
             console.log('[TVApp] Inicializando AnimeYT TV...');
 
+            // 0. Escalar el lienzo de 1280x720 al tamaño real de la pantalla
+            this._applyScale();
+            window.addEventListener('resize', () => this._applyScale());
+
             // 1. Inicializar teclas Tizen y emulador PC
             if (window.TVKeys) {
                 window.TVKeys.registerKeys();
@@ -79,6 +83,11 @@
         /**
          * Manejador de botón Atrás del control remoto Samsung (10009)
          */
+        _applyScale() {
+            const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+            document.body.style.transform = `scale(${scale})`;
+        }
+
         handleBack() {
             // Si el reproductor está activo, cerrarlo
             if (this.currentRoute.startsWith('#/watch')) {
@@ -226,7 +235,7 @@
                 window.TVUI.renderHome(data);
                 this.nav.refreshFocus();
             } catch (err) {
-                window.TVUI.showToast('Error cargando estrenos');
+                window.TVUI.showToast(`Error cargando estrenos: ${err && err.message ? err.message : err}`);
             } finally {
                 window.TVUI.showLoading(false);
             }
@@ -255,7 +264,7 @@
                 window.TVUI.renderSearchResults(results);
                 this.nav.refreshFocus('#search-results-grid [data-focusable="true"]');
             } catch (err) {
-                window.TVUI.showToast('Error en la búsqueda');
+                window.TVUI.showToast(`Error en la búsqueda: ${err && err.message ? err.message : err}`);
             } finally {
                 window.TVUI.showLoading(false);
             }
@@ -275,7 +284,7 @@
                 window.TVUI.renderCatalog(data, this.catalogFilters);
                 this.nav.refreshFocus();
             } catch (err) {
-                window.TVUI.showToast('Error cargando catálogo');
+                window.TVUI.showToast(`Error cargando catálogo: ${err && err.message ? err.message : err}`);
             } finally {
                 window.TVUI.showLoading(false);
             }
@@ -297,7 +306,7 @@
                 window.TVUI.renderAnimeDetail(anime);
                 this.nav.refreshFocus('.detail-actions [data-focusable="true"]');
             } catch (err) {
-                window.TVUI.showToast('Error al cargar la ficha del anime');
+                window.TVUI.showToast(`Error al cargar la ficha del anime: ${err && err.message ? err.message : err}`);
             } finally {
                 window.TVUI.showLoading(false);
             }
