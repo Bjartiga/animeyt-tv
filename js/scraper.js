@@ -173,6 +173,31 @@
     }
 
     /**
+     * Ficha de la serie a partir de la URL de un episodio:
+     * /118228/anime/<serie>-capitulo-2/ -> /tv/<serie>/
+     * (a veces el slug del episodio viene recortado y /tv/<corto>/ redirige al slug completo)
+     */
+    function animeUrlFromEpisode(episodeUrl) {
+        const match = /\/anime\/(.+?)-(capitulo|episodio)-[\d-]+\/?$/i.exec(episodeUrl || '');
+        return match ? `${BASE_URL}/tv/${match[1]}/` : '';
+    }
+
+    function seriesSlug(url) {
+        const match = /\/tv\/([^/?#]+)/i.exec(url || '');
+        return match ? match[1].toLowerCase() : '';
+    }
+
+    /**
+     * ¿El episodio pertenece a esta serie? Compara slugs aceptando el slug recortado del episodio
+     */
+    function episodeBelongsTo(episodeAnimeUrl, seriesUrl) {
+        const episodeSlug = seriesSlug(episodeAnimeUrl);
+        const slug = seriesSlug(seriesUrl);
+        if (!episodeSlug || !slug) return false;
+        return slug === episodeSlug || slug.indexOf(episodeSlug + '-') === 0;
+    }
+
+    /**
      * Filtros reales del catálogo (los <select> del sitio), para no tener listas desactualizadas
      */
     const CATALOG_FILTERS = ['genero', 'estado', 'anio', 'temporada', 'orden'];
@@ -204,6 +229,8 @@
     const TVScraper = {
         resolveUrl: resolveUrl,
         extractImageUrl: extractImageUrl,
+        animeUrlFromEpisode: animeUrlFromEpisode,
+        episodeBelongsTo: episodeBelongsTo,
 
         /**
          * ¿Este servidor se puede reproducir con el reproductor nativo (sin iframe ni anuncios)?
@@ -273,6 +300,7 @@
                         search: search,
                         episode: code,
                         url: url,
+                        animeUrl: animeUrlFromEpisode(url),
                         image: image
                     });
                 }
@@ -405,7 +433,8 @@
             });
 
             return {
-                url: cleanUrl,
+                // URL canónica: el slug corto de un episodio redirige al largo; guardar siempre el mismo
+                url: resolveUrl(attrOf(doc.querySelector('link[rel="canonical"]'), 'href')) || cleanUrl,
                 title: title,
                 synopsis: synopsis,
                 poster: poster,

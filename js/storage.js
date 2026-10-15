@@ -182,6 +182,22 @@
             return !exists;
         },
 
+        /**
+         * Actualiza título/imagen de una serie ya guardada (p. ej. póster al abrir su ficha)
+         */
+        refreshFavorite: function(anime) {
+            if (!anime || !anime.url) return;
+            const favorites = this.getFavorites();
+            let changed = false;
+            favorites.forEach(f => {
+                if (f.url === anime.url) {
+                    if (anime.title && f.title !== anime.title) { f.title = anime.title; changed = true; }
+                    if (anime.image && f.image !== anime.image) { f.image = anime.image; changed = true; }
+                }
+            });
+            if (changed) this._writeJson(STORAGE_KEYS.FAVORITES, favorites);
+        },
+
         _readJson: function(key, fallback) {
             try {
                 const data = localStorage.getItem(key);

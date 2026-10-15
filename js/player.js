@@ -31,6 +31,7 @@
             this.isServerBarVisible = false;
 
             this.onEpisodeChange = options.onEpisodeChange || null;
+            this.onOpenSeries = options.onOpenSeries || null;
             this.onClose = options.onClose || null;
 
             this._handlePlayerKeys = this._handlePlayerKeys.bind(this);
@@ -135,9 +136,9 @@
                 this.currentEpisode.listUrl = containerInfo.listUrl;
                 if (!this.currentEpisode.animeUrl) this.currentEpisode.animeUrl = containerInfo.listUrl || '';
                 if (!this.currentEpisode.image) this.currentEpisode.image = containerInfo.backdrop || '';
-                if (containerInfo.title && this.titleEl) {
-                    this.titleEl.textContent = containerInfo.title;
+                if (containerInfo.title) {
                     this.currentEpisode.fullTitle = containerInfo.title;
+                    if (this.titleEl) this.titleEl.textContent = containerInfo.title;
                 }
 
                 // 2. Extraer servidores limpios desde Mytsumi sin anuncios
@@ -526,9 +527,61 @@
         /**
          * Renderiza la lista de servidores en la barra inferior
          */
+        /**
+         * Serie del episodio actual (para Mi lista e "Ir a la serie")
+         */
+        _series() {
+            const ep = this.currentEpisode || {};
+            const title = ep.animeTitle ||
+                (ep.fullTitle || '').replace(/\s+(cap[ií]tulo|episodio)\s+\d+.*$/i, '').trim();
+            return { url: ep.animeUrl || '', title: title, image: ep.image || '' };
+        }
+
+        openSeries() {
+            const series = this._series();
+            if (!series.url) {
+                this._showNotification('No se encontró la serie de este episodio');
+                return;
+            }
+            if (typeof this.onOpenSeries === 'function') this.onOpenSeries(series.url);
+        }
+
+        _toggleFavorite(button) {
+            const series = this._series();
+            if (!series.url || !window.TVStorage) return;
+            const added = window.TVStorage.toggleFavorite(series);
+            if (button) button.textContent = added ? '✓ En mi lista' : '★ Mi lista';
+            this._showNotification(added ? `${series.title || 'Serie'} agregada a Mi lista` : 'Quitada de Mi lista');
+        }
+
         _renderServerBar() {
             if (!this.serverList) return;
             this.serverList.innerHTML = '';
+
+            // Acciones de la serie, en la misma fila que los servidores (▲ siempre cierra el panel)
+            const series = this._series();
+            if (series.url) {
+                const favorite = window.TVStorage && window.TVStorage.isFavorite(series.url);
+                const favButton = document.createElement('button');
+                favButton.type = 'button';
+                favButton.className = 'player-action-btn';
+                favButton.setAttribute('data-focusable', 'true');
+                favButton.textContent = favorite ? '✓ En mi lista' : '★ Mi lista';
+                favButton.addEventListener('click', () => this._toggleFavorite(favButton));
+                this.serverList.appendChild(favButton);
+
+                const seriesButton = document.createElement('button');
+                seriesButton.type = 'button';
+                seriesButton.className = 'player-action-btn';
+                seriesButton.setAttribute('data-focusable', 'true');
+                seriesButton.innerHTML = '<i class="dot red"></i> Ir a la serie';
+                seriesButton.addEventListener('click', () => this.openSeries());
+                this.serverList.appendChild(seriesButton);
+
+                const divider = document.createElement('span');
+                divider.className = 'player-bar-divider';
+                this.serverList.appendChild(divider);
+            }
 
             this.servers.forEach((server, index) => {
                 const btn = document.createElement('button');
@@ -581,6 +634,8 @@
         toggleServerBar() {
             this.isServerBarVisible = !this.isServerBarVisible;
             this._updateNavigationLock();
+            const main = document.getElementById('app-main');
+            if (main) main.scrollTop = 0;
             if (this.serverBar) {
                 this.serverBar.classList.toggle('is-visible', this.isServerBarVisible);
                 const nav = window.appNavigation;
@@ -671,6 +726,13 @@
             if (this.isServerBarVisible && code === K.UP) {
                 e.preventDefault();
                 this.toggleServerBar();
+                return;
+            }
+
+            // Rojo: ir a la ficha de la serie (para agregarla a Mi lista y seguirla)
+            if (code === K.COLOR_RED) {
+                e.preventDefault();
+                this.openSeries();
                 return;
             }
 

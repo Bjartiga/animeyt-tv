@@ -64,6 +64,11 @@
                 },
                 onClose: () => {
                     this.handleBack();
+                },
+                onOpenSeries: (animeUrl) => {
+                    // Reemplaza el reproductor en la pila: Atrás desde la ficha no vuelve al video
+                    this.player.destroy();
+                    this.navigate(`#/anime?url=${encodeURIComponent(animeUrl)}`, true);
                 }
             });
 
@@ -344,6 +349,7 @@
             window.TVUI.showLoading(true, 'Cargando información del anime...');
             try {
                 const anime = await window.TVScraper.getAnimeDetail(params.url);
+                window.TVStorage.refreshFavorite({ url: anime.url, title: anime.title, image: anime.poster });
                 window.TVUI.renderAnimeDetail(anime);
                 this.nav.refreshFocus('.detail-actions [data-focusable="true"]');
                 window.TVUI.switchView('anime'); // volver arriba tras renderizar

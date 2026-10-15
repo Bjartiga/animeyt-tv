@@ -83,7 +83,8 @@
                 this.onFocusChange(element);
             }
 
-            if (scroll && !this._scrollRow(element)) {
+            // Dentro del reproductor nunca se desplaza la pantalla (el panel de servidores ya está a la vista)
+            if (scroll && !element.closest('[data-nav-noscroll]') && !this._scrollRow(element)) {
                 this.currentFocus.scrollIntoView({
                     behavior: 'auto', // smooth es muy costoso en el GPU del TV
                     block: 'center',

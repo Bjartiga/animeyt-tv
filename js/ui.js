@@ -5,7 +5,7 @@
 (function(window) {
     'use strict';
 
-    const APP_VERSION = '1.3.0';
+    const APP_VERSION = '1.3.1';
 
     // Fila de Inicio: posición vertical donde queda la fila enfocada (debajo del billboard compacto)
     const HOME_ROW_ANCHOR = 300;
@@ -63,19 +63,36 @@
      * Tarjeta 2:3 de anime (póster)
      */
     function posterCard(anime) {
+        const badge = anime.newEpisode ? `<span class="card-badge card-badge-new">NUEVO ${esc(anime.newEpisode)}</span>` : '';
         const sub = [anime.type, anime.score ? `★ ${anime.score}` : (anime.rating ? `★ ${anime.rating}` : ''), anime.season || anime.status]
             .filter(Boolean).join(' · ');
         return `
             <button type="button" class="card card-poster" data-focusable="true" data-action="open-anime"
                 data-url="${esc(anime.url)}"
                 data-bb-title="${esc(anime.title)}" data-bb-meta="${esc(sub)}" data-bb-image="${esc(anime.image || '')}" data-bb-kicker="Anime">
-                <div class="card-thumb" style="background-image: ${cssUrl(anime.image)}"></div>
+                <div class="card-thumb" style="background-image: ${cssUrl(anime.image)}">${badge}</div>
                 <div class="card-body">
                     <div class="card-title">${esc(anime.title)}</div>
                     <div class="card-sub">${esc(sub)}</div>
                 </div>
             </button>
         `;
+    }
+
+    /**
+     * Episodios recientes de una serie de Mi lista que aún no se vieron
+     */
+    function newEpisodesFor(favoriteUrl, latestEpisodes) {
+        return (latestEpisodes || []).filter(ep =>
+            window.TVScraper.episodeBelongsTo(ep.animeUrl, favoriteUrl) && !isWatched(ep.url));
+    }
+
+    function favoritePosters(latestEpisodes) {
+        const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
+        return favorites.map(f => {
+            const fresh = newEpisodesFor(f.url, latestEpisodes);
+            return posterCard({ url: f.url, title: f.title, image: f.image, newEpisode: fresh.length ? fresh[0].episode || 'EP' : '' });
+        }).join('');
     }
 
     function row(title, cardsHtml) {
@@ -94,6 +111,7 @@
         views: {},
         currentViewName: 'home',
         featured: null,
+        latestEpisodes: [],
 
         init: function() {
             this.views = {
@@ -124,7 +142,10 @@
             if (header) header.classList.toggle('hidden', viewName === 'watch');
 
             const main = document.getElementById('app-main');
-            if (main) main.scrollTop = 0;
+            if (main) {
+                main.scrollTop = 0;
+                main.style.overflowY = viewName === 'watch' ? 'hidden' : '';
+            }
         },
 
         /**
@@ -181,6 +202,7 @@
             const container = document.getElementById('home-content');
             if (!container) return;
 
+            this.latestEpisodes = data.episodes || [];
             const heroes = (data.hero || []).filter(h => h.image);
             const hero = heroes[0] || (data.hero || [])[0] || null;
             const firstEpisode = (data.episodes || [])[0];
@@ -213,6 +235,19 @@
             // Filas
             let rows = '';
 
+            // Nuevos episodios de las series que sigues (Mi lista), aún sin ver
+            const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
+            const followedNew = (data.episodes || []).filter(ep =>
+                !isWatched(ep.url) && favorites.some(f => window.TVScraper.episodeBelongsTo(ep.animeUrl, f.url)));
+            rows += row('Nuevos episodios de Mi lista', followedNew.map(ep => episodeCard({
+                url: ep.url,
+                title: ep.title,
+                animeTitle: ep.title,
+                episode: ep.episode,
+                animeUrl: ep.animeUrl,
+                image: ep.image
+            }, { kicker: 'Nuevo en Mi lista' })).join(''));
+
             // Continuar viendo: historial con progreso a medias
             const history = window.TVStorage ? window.TVStorage.getHistory() : [];
             const continueCards = history
@@ -237,6 +272,7 @@
                 title: ep.title,
                 animeTitle: ep.title,
                 episode: ep.episode,
+                animeUrl: ep.animeUrl,
                 image: ep.image
             }, { kicker: 'Nuevo episodio' })).join('');
             rows += row('Últimos episodios', latestCards);
@@ -250,8 +286,7 @@
             `).join('');
             rows += row('Destacados de la temporada', featuredCards);
 
-            const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
-            rows += row('Mi lista', favorites.map(f => posterCard({ url: f.url, title: f.title, image: f.image })).join(''));
+            rows += row('Mi lista', favoritePosters(data.episodes));
 
             container.innerHTML = `
                 <div class="billboard" id="home-billboard">
@@ -433,8 +468,8 @@
             if (!container) return;
             const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
             container.innerHTML = favorites.length
-                ? `<div class="poster-grid">${favorites.map(f => posterCard({ url: f.url, title: f.title, image: f.image })).join('')}</div>`
-                : '<p class="empty-msg">Tu lista está vacía. Abre un anime y elige “＋ Mi lista”.</p>';
+                ? `<div class="poster-grid">${favoritePosters(this.latestEpisodes)}</div>`
+                : '<p class="empty-msg">Tu lista está vacía. Abre un anime y elige “＋ Mi lista”, o pulsa ▼ → “★ Mi lista” mientras ves un episodio.</p>';
         },
 
         /**

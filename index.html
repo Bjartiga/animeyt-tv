@@ -71,7 +71,7 @@
         </section>
 
         <!-- 6. Reproductor -->
-        <section id="view-watch" class="view hidden">
+        <section id="view-watch" class="view hidden" data-nav-noscroll>
             <div id="player-viewport" class="player-viewport"></div>
 
             <div id="player-buffering" class="player-buffering">
@@ -96,7 +96,8 @@
                         <span><b>OK</b> Pausa</span>
                         <span><b>◀ ▶</b> 10s</span>
                         <span><i class="dot green"></i> Saltar intro</span>
-                        <span><b>▼</b> Servidores</span>
+                        <span><b>▼</b> Opciones</span>
+                        <span><i class="dot red"></i> Ir a la serie</span>
                         <span><b>CH+ / CH−</b> Episodio</span>
                         <span><i class="dot blue"></i> Visto</span>
                     </div>
@@ -110,7 +111,7 @@
 
             <!-- Panel de servidores (▼ o amarillo para abrir, ▲ o ↩ para cerrar) -->
             <div id="player-server-bar" class="player-server-bar" data-nav-scope>
-                <div class="server-bar-title">Servidor de video <span>▲ cerrar</span></div>
+                <div class="server-bar-title">Opciones <span>▲ o ↩ para cerrar</span></div>
                 <div id="player-server-list" class="player-server-list"></div>
             </div>
 
