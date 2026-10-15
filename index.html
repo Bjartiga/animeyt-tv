@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>AnimeYT TV (DEV)</title>
+    <style>
+        body { margin: 0; background: #0a0a0f; color: #f3f4f6; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 36px; text-align: center; }
+        small { display: block; margin-top: 24px; font-size: 24px; color: #9ca3af; }
+    </style>
+</head>
+<body>
+    <div id="status">Conectando con el Mac...<small>http://192.168.100.7:8088</small></div>
+    <script>
+        // Cargador de desarrollo: abre la app servida por dev-server.js en el Mac
+        var DEV_URL = 'http://192.168.100.7:8088/';
+
+        function tryConnect() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', DEV_URL + '__version', true);
+            xhr.timeout = 3000;
+            xhr.onload = function() { location.replace(DEV_URL); };
+            xhr.onerror = xhr.ontimeout = function() {
+                document.getElementById('status').innerHTML =
+                    'No se encuentra el dev-server del Mac.<small>En el Mac: PORT=8088 node dev-server.js — reintentando...</small>';
+                setTimeout(tryConnect, 3000);
+            };
+            xhr.send();
+        }
+
+        tryConnect();
+    </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "animeyt-tv-dev",
+  "version": "0.0.1",
+  "packageType": "app",
+  "appName": "AnimeYT TV (DEV)",
+  "appPath": "index.html",
+  "description": "Carga AnimeYT TV en vivo desde el dev-server del Mac (PORT=8088 node dev-server.js)",
+  "keys": [
+    "ColorF0Red",
+    "ColorF1Green",
+    "ColorF2Yellow",
+    "ColorF3Blue",
+    "ChannelUp",
+    "ChannelDown",
+    "Info",
+    "MediaPlay",
+    "MediaPause",
+    "MediaPlayPause",
+    "MediaStop",
+    "MediaFastForward",
+    "MediaRewind"
+  ]
+}
