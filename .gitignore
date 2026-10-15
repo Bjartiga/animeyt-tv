@@ -2,3 +2,5 @@
 .claude/
 TizenBrewInstaller
 *.wgt
+build/
+dist/
