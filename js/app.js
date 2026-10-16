@@ -111,7 +111,12 @@
                 return;
             }
 
-            // En el reproductor, Atrás primero cierra el panel de opciones
+            // En el reproductor, Atrás primero cancela el aviso de "Siguiente episodio"...
+            if (this.currentRoute.startsWith('#/watch') && this.player.cancelNextPrompt()) {
+                return;
+            }
+
+            // ...y después cierra el panel de opciones
             if (this.currentRoute.startsWith('#/watch') && this.player.isServerBarVisible) {
                 this.player.toggleServerBar();
                 return;
@@ -288,12 +293,14 @@
         async _loadHomeView() {
             window.TVUI.switchView('home');
             window.TVUI.showLoading(true, 'Cargando estrenos de AnimeYT...');
+            const route = this.currentRoute;
             try {
                 // Ranking en paralelo para la fila "Top 10"; si falla, Inicio se muestra igual
                 const [data, ranking] = await Promise.all([
                     window.TVScraper.getHomeContent(),
                     window.TVScraper.getRanking('7d').catch(() => [])
                 ]);
+                if (this.currentRoute !== route) return; // ya se navegó a otra pantalla
                 window.TVUI.renderHome(data, ranking);
                 this.nav.refreshFocus('.billboard-actions [data-focusable="true"]');
             } catch (err) {
@@ -341,6 +348,7 @@
             clearTimeout(this.searchDebounceTimer);
             const query = this.searchQuery.trim();
             if (query.length < 2) {
+                this.searchSeq++; // descarta la búsqueda que todavía esté en camino
                 window.TVUI.setSearchStatus(query ? 'Sigue escribiendo...' : 'Escribe el nombre de un anime');
                 if (!query) window.TVUI.renderSearchResults([], '');
                 return;
@@ -377,8 +385,10 @@
             this.catalogPage = page;
 
             window.TVUI.showLoading(true, `Cargando catálogo página ${page}...`);
+            const route = this.currentRoute;
             try {
                 const data = await window.TVScraper.getCatalog(page, this.catalogFilters);
+                if (this.currentRoute !== route) return; // ya se navegó a otra pantalla
                 this.catalogHasNext = data.hasNext;
                 window.TVUI.renderCatalogFilters(data.filters, this.catalogFilters);
                 window.TVUI.renderCatalog(data);
@@ -401,8 +411,10 @@
 
             window.TVUI.switchView('anime');
             window.TVUI.showLoading(true, 'Cargando información del anime...');
+            const route = this.currentRoute;
             try {
                 const anime = await window.TVScraper.getAnimeDetail(params.url);
+                if (this.currentRoute !== route) return; // ya se navegó a otra pantalla
                 window.TVStorage.refreshFavorite({ url: anime.url, title: anime.title, image: anime.poster });
                 window.TVUI.renderAnimeDetail(anime);
                 this.nav.refreshFocus('.detail-actions [data-focusable="true"]');
@@ -449,8 +461,10 @@
             window.TVUI.switchView('ranking');
             const periodo = params.periodo || '7d';
             window.TVUI.showLoading(true, 'Cargando ranking...');
+            const route = this.currentRoute;
             try {
                 const blocks = await window.TVScraper.getRanking(periodo);
+                if (this.currentRoute !== route) return; // ya se navegó a otra pantalla
                 window.TVUI.renderRanking(blocks, periodo);
                 this.nav.refreshFocus('#ranking-content [data-focusable="true"]');
                 window.TVUI.switchView('ranking'); // volver arriba tras renderizar

@@ -20,6 +20,7 @@
             this.iframe = null;
             this.video = null;
             this.mountToken = 0;
+            this.loadId = 0;
             this.shield = null;
             this.focusKeeperInterval = null;
             this.osdTimeout = null;
@@ -118,7 +119,14 @@
             this._teardownMedia();
             if (this.isServerBarVisible) this.toggleServerBar();
 
-            this.currentEpisode = episodeData;
+            // Cada carga tiene su número: si se cierra el reproductor o empieza otro episodio mientras
+            // esperamos al sitio, la respuesta vieja se descarta (antes montaba servidores tras cerrar
+            // o mezclaba el "Siguiente" de un episodio con otro)
+            const loadId = ++this.loadId;
+            const episode = episodeData;
+            const isStale = () => loadId !== this.loadId || !this.isPlaying || this.currentEpisode !== episode;
+
+            this.currentEpisode = episode;
             this._failedNative = {};
             this.isPlaying = true;
 
@@ -132,22 +140,23 @@
             try {
                 // 1. Obtener container ID de AnimeYT
                 const containerInfo = await window.TVScraper.getEpisodeContainer(episodeData.url);
+                if (isStale()) return;
                 if (!containerInfo || (!containerInfo.containerId && !containerInfo.multiOptionsUrl)) {
                     throw new Error('No se encontró el reproductor de este episodio');
                 }
 
-                this.currentEpisode.prevUrl = containerInfo.prevUrl;
-                this.currentEpisode.nextUrl = containerInfo.nextUrl;
-                this.currentEpisode.listUrl = containerInfo.listUrl;
+                episode.prevUrl = containerInfo.prevUrl;
+                episode.nextUrl = containerInfo.nextUrl;
+                episode.listUrl = containerInfo.listUrl;
                 // Página de servidores del sitio: la abre "Ver en el navegador del TV"
-                this.currentEpisode.containerUrl = containerInfo.containerId
+                episode.containerUrl = containerInfo.containerId
                     ? `https://mytsumi.com/container.php?id=${encodeURIComponent(containerInfo.containerId)}` +
                       `&lang=${encodeURIComponent(containerInfo.lang)}&only=${encodeURIComponent(containerInfo.only)}`
                     : containerInfo.multiOptionsUrl;
-                if (!this.currentEpisode.animeUrl) this.currentEpisode.animeUrl = containerInfo.listUrl || '';
-                if (!this.currentEpisode.image) this.currentEpisode.image = containerInfo.backdrop || '';
+                if (!episode.animeUrl) episode.animeUrl = containerInfo.listUrl || '';
+                if (!episode.image) episode.image = containerInfo.backdrop || '';
                 if (containerInfo.title) {
-                    this.currentEpisode.fullTitle = containerInfo.title;
+                    episode.fullTitle = containerInfo.title;
                     if (this.titleEl) this.titleEl.textContent = containerInfo.title;
                 }
 
@@ -162,8 +171,9 @@
                 } else {
                     const multi = await window.TVScraper.getMultiServers(containerInfo.multiOptionsUrl);
                     servers = multi.servers;
-                    this.currentEpisode.containerUrl = multi.containerUrl;
+                    episode.containerUrl = multi.containerUrl;
                 }
+                if (isStale()) return;
 
                 if (!servers || !servers.length) {
                     throw new Error('No hay servidores de video disponibles para este capítulo');
@@ -203,13 +213,14 @@
                         title: episodeData.animeTitle || episodeData.title || containerInfo.title,
                         episode: episodeData.episode || containerInfo.title,
                         url: episodeData.url,
-                        animeUrl: this.currentEpisode.animeUrl,
-                        image: this.currentEpisode.image
+                        animeUrl: episode.animeUrl,
+                        image: episode.image
                     });
                 }
 
                 this._showOSD();
             } catch (err) {
+                if (isStale()) return;
                 console.error('[TVPlayer] Error cargando episodio:', episodeData.url, err);
                 this._showStatus(`Error: ${err.message || 'No se pudo reproducir'}`);
             }
@@ -490,6 +501,16 @@
             this._nextPromptUrl = null;
             const box = document.getElementById('player-next');
             if (box) box.classList.remove('is-visible');
+        }
+
+        /**
+         * Cancela el aviso de siguiente episodio si está a la vista. Devuelve true si había uno.
+         */
+        cancelNextPrompt() {
+            if (!this._nextPromptUrl) return false;
+            this._hideNextPrompt();
+            this._showNotification('Siguiente episodio cancelado');
+            return true;
         }
 
         _goToNext() {
@@ -785,6 +806,19 @@
             const code = window.TVKeys ? window.TVKeys.normalizeEvent(e) : e.keyCode;
             this._debug(`tecla ${code} panel=${this.isServerBarVisible} video=${!!this.video} nav=${window.appNavigation && window.appNavigation.enabled} foco=${document.activeElement && document.activeElement.tagName}`);
 
+            const K = window.TVKeys || {};
+
+            // Aviso "Siguiente episodio" (va antes que Atrás): OK lo reproduce ya, cualquier otra tecla lo cancela
+            if (this._nextPromptUrl) {
+                e.preventDefault();
+                if (code === K.ENTER || code === K.PLAY || code === K.PLAY_PAUSE || code === K.CHANNEL_UP) {
+                    this._goToNext();
+                } else {
+                    this.cancelNextPrompt();
+                }
+                return;
+            }
+
             // Retorno / Salir del reproductor
             if (code === (window.TVKeys ? window.TVKeys.RETURN : 10009)) {
                 e.preventDefault();
@@ -796,20 +830,6 @@
                 this.destroy();
                 if (typeof this.onClose === 'function') {
                     this.onClose();
-                }
-                return;
-            }
-
-            const K = window.TVKeys || {};
-
-            // Aviso "Siguiente episodio": OK lo reproduce ya, cualquier otra tecla lo cancela
-            if (this._nextPromptUrl) {
-                e.preventDefault();
-                if (code === K.ENTER || code === K.PLAY || code === K.PLAY_PAUSE || code === K.CHANNEL_UP) {
-                    this._goToNext();
-                } else {
-                    this._hideNextPrompt();
-                    this._showNotification('Siguiente episodio cancelado');
                 }
                 return;
             }
@@ -915,6 +935,7 @@
          */
         destroy() {
             this.isPlaying = false;
+            this.loadId++; // anula cualquier carga de episodio pendiente
             this.isServerBarVisible = false;
             this._stopFocusKeeper();
 

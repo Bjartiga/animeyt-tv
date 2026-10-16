@@ -19,8 +19,9 @@
             .replace(/'/g, '&#39;');
     }
 
+    // Para CSS (style.backgroundImage). Comillas y paréntesis codificados: no rompen ni el CSS ni un atributo HTML
     function cssUrl(url) {
-        return url ? `url('${String(url).replace(/'/g, '%27')}')` : 'none';
+        return url ? `url('${String(url).replace(/'/g, '%27').replace(/"/g, '%22').replace(/[()]/g, encodeURIComponent)}')` : 'none';
     }
 
     function progressPercent(url) {
@@ -490,7 +491,7 @@
 
             container.innerHTML = `
                 <div class="detail">
-                    <div class="detail-backdrop" style="background-image: ${cssUrl(anime.backdrop || anime.poster)}"></div>
+                    <div class="detail-backdrop" style="background-image: ${esc(cssUrl(anime.backdrop || anime.poster))}"></div>
                     <div class="detail-shade"></div>
                     <div class="detail-header">
                         <img class="detail-poster" src="${esc(anime.poster || 'img/icon.png')}" alt="" />

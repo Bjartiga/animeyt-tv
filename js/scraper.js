@@ -240,8 +240,10 @@
      * Enlace directo a un archivo de video (p. ej. Omega = archive.org/download/.../x.mp4): se reproduce tal cual
      */
     async function resolveDirectFile(url) {
-        const isHls = /\.m3u8(\?|#|$)/i.test(url);
-        return { url: url, type: isHls ? 'application/x-mpegURL' : 'video/mp4', quality: 'directo', poster: '' };
+        const type = /\.m3u8(\?|#|$)/i.test(url) ? 'application/x-mpegURL'
+            : /\.webm(\?|#|$)/i.test(url) ? 'video/webm'
+            : 'video/mp4';
+        return { url: url, type: type, quality: 'directo', poster: '' };
     }
 
     const DIRECT_RESOLVERS = [
