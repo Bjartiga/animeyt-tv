@@ -215,8 +215,18 @@
         return result;
     }
 
+    /**
+     * Enlace directo a un archivo de video (p. ej. Omega = archive.org/download/.../x.mp4): se reproduce tal cual
+     */
+    async function resolveDirectFile(url) {
+        const isHls = /\.m3u8(\?|#|$)/i.test(url);
+        return { url: url, type: isHls ? 'application/x-mpegURL' : 'video/mp4', quality: 'directo', poster: '' };
+    }
+
     const DIRECT_RESOLVERS = [
-        { pattern: /^https?:\/\/([^/]+\.)?ok\.ru\/videoembed\//i, resolve: resolveOkRu }
+        { pattern: /^https?:\/\/([^/]+\.)?ok\.ru\/videoembed\//i, resolve: resolveOkRu },
+        // Excluye páginas de reproductor que terminan en .mp4 (p. ej. burstcloud.co/embed/.../x.mp4)
+        { pattern: /^https?:\/\/(?![^?#]*\/embed\/)[^?#]+\.(mp4|m4v|webm|m3u8)(\?|#|$)/i, resolve: resolveDirectFile }
     ];
 
     function findDirectResolver(url) {

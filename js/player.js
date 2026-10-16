@@ -47,13 +47,15 @@
          * 6º MEGA (mega.nz - 720p)
          */
         _sortServers(servers) {
+            // Primero los que se reproducen en el reproductor nativo (OK, Omega/archive.org), luego los web
             const priorityRules = [
                 { pattern: /ok\.ru/i, score: 100 },
+                { pattern: /archive\.org|omega/i, score: 95 },
                 { pattern: /abyss/i, score: 90 },
                 { pattern: /epsilon|rpmvid|ytplay/i, score: 80 },
                 { pattern: /byse/i, score: 70 },
                 { pattern: /alpha|burstcloud/i, score: 60 },
-                { pattern: /mega/i, score: 50 }
+                { pattern: /mega\.nz|^mega$/i, score: 50 }
             ];
 
             return servers.slice().sort((a, b) => {
@@ -78,6 +80,8 @@
                     }
                 }
 
+                if (window.TVScraper.canPlayDirect(a)) scoreA += 1000;
+                if (window.TVScraper.canPlayDirect(b)) scoreB += 1000;
                 return scoreB - scoreA;
             });
         }
@@ -115,6 +119,7 @@
             if (this.isServerBarVisible) this.toggleServerBar();
 
             this.currentEpisode = episodeData;
+            this._failedNative = {};
             this.isPlaying = true;
 
             if (this.titleEl) {
@@ -134,6 +139,9 @@
                 this.currentEpisode.prevUrl = containerInfo.prevUrl;
                 this.currentEpisode.nextUrl = containerInfo.nextUrl;
                 this.currentEpisode.listUrl = containerInfo.listUrl;
+                // Página de servidores del sitio: la abre "Ver en el navegador del TV"
+                this.currentEpisode.containerUrl = `https://mytsumi.com/container.php?id=${encodeURIComponent(containerInfo.containerId)}` +
+                    `&lang=${encodeURIComponent(containerInfo.lang)}&only=${encodeURIComponent(containerInfo.only)}`;
                 if (!this.currentEpisode.animeUrl) this.currentEpisode.animeUrl = containerInfo.listUrl || '';
                 if (!this.currentEpisode.image) this.currentEpisode.image = containerInfo.backdrop || '';
                 if (containerInfo.title) {
@@ -314,6 +322,19 @@
 
         _fallbackToIframe(server) {
             this._teardownMedia();
+            this._failedNative = this._failedNative || {};
+            this._failedNative[server.url] = true;
+
+            // Antes que el reproductor web, probar otro servidor nativo (p. ej. OK falla -> Omega)
+            const nextNative = this.servers.findIndex(s =>
+                window.TVScraper.canPlayDirect(s) && !this._failedNative[s.url]);
+            if (nextNative !== -1) {
+                this._showNotification(`${server.label} no cargó: probando ${this.servers[nextNative].label}`);
+                this.currentServerIndex = nextNative;
+                this._mountCurrentServer();
+                return;
+            }
+
             this._showNotification(`${server.label}: usando reproductor web`);
             this._mountIframe(server);
         }
@@ -591,6 +612,14 @@
                 seriesButton.addEventListener('click', () => this.openSeries());
                 this.serverList.appendChild(seriesButton);
 
+                const browserButton = document.createElement('button');
+                browserButton.type = 'button';
+                browserButton.className = 'player-action-btn';
+                browserButton.setAttribute('data-focusable', 'true');
+                browserButton.textContent = '🌐 Ver en el navegador del TV';
+                browserButton.addEventListener('click', () => this.openInBrowser());
+                this.serverList.appendChild(browserButton);
+
                 const divider = document.createElement('span');
                 divider.className = 'player-bar-divider';
                 this.serverList.appendChild(divider);
@@ -642,7 +671,46 @@
             const server = this.servers[index];
             this._showNotification(window.TVScraper.canPlayDirect(server)
                 ? `Servidor: ${server.label}`
-                : `${server.label}: reproductor web del sitio (puede tener anuncios)`);
+                : `${server.label}: si no arranca, ▼ → Ver en el navegador del TV`);
+        }
+
+        /**
+         * Abre la página de servidores del sitio en el navegador del TV: ahí los reproductores web
+         * corren en su propio dominio, con cursor (flechas + OK) y sus anuncios, igual que en un computador
+         */
+        openInBrowser() {
+            const url = (this.currentEpisode && this.currentEpisode.containerUrl) ||
+                (this.servers[this.currentServerIndex] || {}).url;
+            if (!url) return;
+
+            this._persistProgress(true);
+            if (this.video && !this.video.paused) this.video.pause();
+            if (this.isServerBarVisible) this.toggleServerBar();
+
+            const tizenApp = window.tizen && window.tizen.application;
+            if (!tizenApp || !window.tizen.ApplicationControl) {
+                window.open(url, '_blank');
+                return;
+            }
+
+            this._showNotification('Abriendo el navegador del TV... (Atrás para volver)');
+            const control = new window.tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', url);
+            const fail = (err) => {
+                console.error('[TVPlayer] No se pudo abrir el navegador:', err && err.message);
+                this._showNotification('No se pudo abrir el navegador del TV');
+            };
+            try {
+                // Sin app explícita el sistema elige el navegador; si falla, se prueba el navegador de Samsung
+                tizenApp.launchAppControl(control, null, () => this._debug('navegador abierto'), () => {
+                    try {
+                        tizenApp.launchAppControl(control, 'org.tizen.browser', () => this._debug('navegador abierto (org.tizen.browser)'), fail);
+                    } catch (e) {
+                        fail(e);
+                    }
+                });
+            } catch (e) {
+                fail(e);
+            }
         }
 
         /**
