@@ -135,7 +135,15 @@
                     throw httpError;
                 }
 
-                const html = slimHtml(await response.text());
+                const raw = await response.text();
+                // Página de verificación anti-bot del sitio (aparece si recibe muchas peticiones seguidas):
+                // no se guarda en caché y se informa claro en vez de "no se encontró el reproductor"
+                if (/request is being verified|One moment, please/i.test(raw) && raw.length < 30000) {
+                    const busy = new Error('AnimeYT está verificando la conexión. Reintenta en unos segundos');
+                    busy.status = 503;
+                    throw busy;
+                }
+                const html = slimHtml(raw);
                 clearTimeout(timeoutId);
                 if (pageCache.size >= PAGE_CACHE_MAX) pageCache.delete(pageCache.keys().next().value);
                 pageCache.set(url, { time: Date.now(), html: html });
@@ -185,7 +193,8 @@
         videos.sort((a, b) => rank(a.name) - rank(b.name));
 
         if (videos.length) {
-            return { url: videos[0].url, type: 'video/mp4', quality: videos[0].name, poster: movie.poster || '' };
+            const sources = videos.map(v => ({ url: v.url, type: 'video/mp4', quality: v.name, poster: movie.poster || '' }));
+            return Object.assign({}, sources[0], { sources: sources });
         }
         if (metadata.ondemandHls) {
             return { url: metadata.ondemandHls, type: 'application/x-mpegURL', quality: 'hls', poster: movie.poster || '' };
@@ -322,16 +331,66 @@
         const height = n => parseInt(n, 10) || 0;
         const sorted = names.slice().sort((a, b) => height(b) - height(a));
         const chosen = sorted.find(n => height(n) <= preferred) || sorted[sorted.length - 1];
-        const videoUrl = qualities[chosen];
-        return {
-            url: videoUrl,
-            type: /\.m3u8(\?|#|$)/i.test(videoUrl) ? 'application/x-mpegURL' : 'video/mp4',
-            quality: chosen,
-            poster: ''
-        };
+        const ordered = sorted.filter(n => height(n) <= height(chosen))
+            .concat(sorted.filter(n => height(n) > height(chosen)).reverse());
+        const sources = ordered.filter(n => typeof qualities[n] === 'string' && /^https?:\/\//i.test(qualities[n]))
+            .map(n => ({ url: qualities[n], type: /\.m3u8(\?|#|$)/i.test(qualities[n]) ? 'application/x-mpegURL' : 'video/mp4', quality: n, poster: '' }));
+        if (!sources.length) throw new Error('Mytsumi: sin fuentes válidas');
+        return Object.assign({}, sources[0], { sources: sources });
     }
 
     DIRECT_RESOLVERS.push({ pattern: /^https?:\/\/(www\.)?mytsumi\.com\/multiplayer\/play\d*\/player\.php/i, resolve: resolveMytsumiPlayer });
+
+    // Codec de transporte del cliente público de Epsilon, no una licencia DRM.
+    // Se usa la API de datos; nunca se evalúa JavaScript recibido del proveedor.
+    async function resolveEpsilon(url) {
+        const origin = 'https://ytplay.rpmvid.com';
+        const id = new URL(url).hash.slice(1);
+        const subtle = window.crypto && window.crypto.subtle;
+        if (!subtle) throw new Error('Epsilon: WebCrypto no disponible');
+        const encoded = (await fetchRawText(origin + '/api/v1/video?id=' + encodeURIComponent(id) + '&w=1920&h=1080&r=')).trim();
+        if (!encoded.length || encoded.length > 1000000 || encoded.length % 32 || !/^[0-9a-f]+$/i.test(encoded)) {
+            throw new Error('Epsilon: formato de respuesta desconocido');
+        }
+        const bytes = new Uint8Array(encoded.length / 2);
+        for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(encoded.substr(i * 2, 2), 16);
+        const key = await subtle.importKey('raw', new Uint8Array([107,105,101,109,116,105,101,110,109,117,97,57,49,49,99,97]), 'AES-CBC', false, ['decrypt']);
+        const plain = await subtle.decrypt({ name: 'AES-CBC', iv: new Uint8Array([49,50,51,52,53,54,55,56,57,48,111,105,117,121,116,114]) }, key, bytes);
+        const data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plain));
+        // cfNative incluye las firmas que necesitan las variantes y los segmentos.
+        // No usar "cf": requiere el transporte específico del reproductor web.
+        const master = data && data.cfNative;
+        if (typeof master !== 'string' || !/^https:\/\/[^\s]+\.m3u8(?:\?[^\s]*)?$/i.test(master)) {
+            throw new Error('Epsilon: sin manifiesto nativo');
+        }
+        const manifest = await fetchRawText(master);
+        if (!/^#EXTM3U\s/m.test(manifest)) throw new Error('Epsilon: manifiesto inválido');
+        const lines = manifest.split(/\r?\n/);
+        const sources = [];
+        let height = 0;
+        lines.forEach(function(line) {
+            line = line.trim();
+            if (/^#EXT-X-STREAM-INF:/.test(line)) {
+                const resolution = /RESOLUTION=\d+x(\d+)/.exec(line);
+                height = resolution ? parseInt(resolution[1], 10) : 0;
+            } else if (line && line[0] !== '#' && height) {
+                const child = new URL(line, master);
+                if (child.protocol === 'https:') sources.push({ url: child.href, type: 'application/x-mpegURL', quality: height + 'p', poster: '' });
+                height = 0;
+            }
+        });
+        if (!sources.length) throw new Error('Epsilon: sin variantes nativas');
+        const settings = window.TVStorage ? window.TVStorage.getSettings() : {};
+        const preferred = parseInt(settings.preferredQuality, 10) || 1080;
+        sources.sort(function(a, b) {
+            const ah = parseInt(a.quality, 10), bh = parseInt(b.quality, 10);
+            if ((ah <= preferred) !== (bh <= preferred)) return ah <= preferred ? -1 : 1;
+            return ah <= preferred ? bh - ah : ah - bh;
+        });
+        return Object.assign({}, sources[0], { sources: sources });
+    }
+
+    DIRECT_RESOLVERS.push({ pattern: /^https:\/\/ytplay\.rpmvid\.com\/#[a-zA-Z0-9_-]+$/, resolve: resolveEpsilon });
 
     const TVScraper = {
         getMultiServers: getMultiServers,
@@ -587,6 +646,11 @@
                 poster: poster,
                 backdrop: backdrop,
                 genres: genres,
+                malId: (function() {
+                    const link = doc.querySelector('a[href*="myanimelist.net/anime/"]');
+                    const match = link && /myanimelist\.net\/anime\/(\d+)/.exec(link.getAttribute('href') || '');
+                    return match ? parseInt(match[1], 10) : null;
+                })(),
                 episodes: episodes
             };
         },

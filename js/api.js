@@ -71,9 +71,9 @@
 
             const targetFetchUrl = TVNet.url(endpoint);
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 20000);
             try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 20000);
 
                 const response = await fetch(targetFetchUrl, {
                     method: 'GET',
@@ -84,11 +84,8 @@
                     signal: controller.signal
                 });
 
-                clearTimeout(timeoutId);
-
                 if (!response.ok) {
-                    console.warn(`[TVApi] Error HTTP en búsqueda: ${response.status}`);
-                    return [];
+                    throw new Error(`El servidor de búsqueda respondió HTTP ${response.status}`);
                 }
 
                 const data = await response.json();
@@ -108,14 +105,14 @@
                     });
                 }
 
-                return [];
+                throw new Error('La búsqueda devolvió una respuesta no válida');
             } catch (err) {
                 if (err.name === 'AbortError') {
-                    console.warn('[TVApi] Búsqueda cancelada por timeout');
-                } else {
-                    console.error('[TVApi] Error de red en búsqueda:', err);
+                    throw new Error('La búsqueda tardó demasiado. Intenta de nuevo.');
                 }
-                return [];
+                throw err;
+            } finally {
+                clearTimeout(timeoutId);
             }
         }
     };

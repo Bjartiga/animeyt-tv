@@ -21,6 +21,16 @@
             this.video = null;
             this.mountToken = 0;
             this.loadId = 0;
+            this.streamSources = [];
+            this.streamSourceIndex = 0;
+            this.recoveryTimer = null;
+            this._resumeTime = null;
+            this.skipSegments = [];
+            this.activeSkip = null;
+            this.skipRequestToken = 0;
+            this.webInteraction = false;
+            this.webControlTimer = null;
+            this.webLoadTimer = null;
             this.shield = null;
             this.focusKeeperInterval = null;
             this.osdTimeout = null;
@@ -35,7 +45,18 @@
             this.onOpenSeries = options.onOpenSeries || null;
             this.onClose = options.onClose || null;
 
+            const skipButton = document.getElementById('player-skip');
+            if (skipButton) skipButton.addEventListener('click', () => this._skipSegment());
             this._handlePlayerKeys = this._handlePlayerKeys.bind(this);
+            const webControls = document.getElementById('player-web-controls');
+            if (webControls) webControls.addEventListener('click', (e) => {
+                const button = e.target.closest('[data-player-web-action]');
+                if (!button) return;
+                const action = button.dataset.playerWebAction;
+                if (action === 'activate') this.activateWebControl();
+                else if (action === 'options') this.toggleServerBar();
+                else if (action === 'browser') this.openInBrowser(true);
+            });
         }
 
         /**
@@ -91,22 +112,13 @@
          * Añade parámetros de autoplay al servidor para que el video arranque solo
          */
         _enhanceAutoplayUrl(url) {
-            if (!url) return '';
+            // No modificar enlaces firmados ni fragmentos (p. ej. la clave de un embed de Mega).
+            if (!url || !/^https?:\/\/(?:[^/]+\.)?ok\.ru\/videoembed\//i.test(url)) return url || '';
             try {
-                const u = new URL(url);
-                if (!u.searchParams.has('autoplay')) {
-                    u.searchParams.set('autoplay', '1');
-                }
-                if (!u.searchParams.has('auto')) {
-                    u.searchParams.set('auto', '1');
-                }
-                return u.href;
-            } catch (e) {
-                if (url.includes('?')) {
-                    return url + '&autoplay=1';
-                }
-                return url + '?autoplay=1';
-            }
+                const parsed = new URL(url);
+                if (!parsed.searchParams.has('autoplay')) parsed.searchParams.set('autoplay', '1');
+                return parsed.href;
+            } catch (e) { return url; }
         }
 
         /**
@@ -127,6 +139,9 @@
             const isStale = () => loadId !== this.loadId || !this.isPlaying || this.currentEpisode !== episode;
 
             this.currentEpisode = episode;
+            this._resumeTime = null;
+            this.streamSources = [];
+            this.streamSourceIndex = 0;
             this._failedNative = {};
             this.isPlaying = true;
 
@@ -214,7 +229,8 @@
                         episode: episodeData.episode || containerInfo.title,
                         url: episodeData.url,
                         animeUrl: episode.animeUrl,
-                        image: episode.image
+                        image: episode.image,
+                        nextUrl: episode.nextUrl
                     });
                 }
 
@@ -239,6 +255,9 @@
             }
 
             this._teardownMedia();
+            this.streamSources = [];
+            this.streamSourceIndex = 0;
+            this.playbackMode = 'loading';
             this._updateServerButtonsState();
 
             if (window.TVScraper.canPlayDirect(server)) {
@@ -252,10 +271,26 @@
          * Quita el video o iframe montado (y cancela montajes nativos en curso)
          */
         _teardownMedia() {
+            this.releaseWebControl(false);
+            clearTimeout(this.webLoadTimer);
+            this.webLoadTimer = null;
+            this._showWebControls(false);
+            this._rememberPosition();
+            this._persistProgress(true);
+            this._clearRecoveryTimer();
             this.mountToken++;
+            this.skipRequestToken++;
+            this.skipSegments = [];
+            this.activeSkip = null;
+            this._updateSkipPrompt();
+            if (this.video && this.video.destroyMedia) {
+                this.video.destroyMedia();
+                this.video = null;
+            }
             if (this.video) {
                 this.video.pause();
                 this.video.removeAttribute('src');
+                this.video.innerHTML = ''; // no volver a seleccionar el <source> anterior al hacer load()
                 this.video.load();
                 this.video.remove();
                 this.video = null;
@@ -272,16 +307,25 @@
         /**
          * Reproductor nativo: extrae el MP4/HLS del servidor y lo reproduce sin anuncios
          */
-        _mountNative(server) {
+        _mountNative(server, sources, sourceIndex = 0) {
+            this.playbackMode = 'loading';
             const token = this.mountToken;
             this._showStatus(`Obteniendo video directo de ${server.label}...`);
 
-            window.TVScraper.resolveDirectStream(server)
-                .then((stream) => {
+            const request = sources ? Promise.resolve({ sources: sources }) : window.TVScraper.resolveDirectStream(server);
+            this._armRecovery(server, token);
+            request.then((resolved) => {
                     if (token !== this.mountToken) return;
+                    const candidates = resolved.sources || [resolved];
+                    this.streamSources = candidates;
+                    this.streamSourceIndex = sourceIndex;
+                    const stream = candidates[sourceIndex];
+                    if (!stream) throw new Error('Calidad no disponible');
+                    this._renderServerBar();
                     console.log(`[TVPlayer] Directo ${server.label} (${stream.quality}): ${stream.type}`);
 
-                    const video = document.createElement('video');
+                    const avplay = window.TVAVPlay && window.TVAVPlay.supports(stream);
+                    const video = avplay ? window.TVAVPlay.create(stream) : document.createElement('video');
                     video.className = 'player-video';
                     video.autoplay = true;
                     video.preload = 'auto';
@@ -291,34 +335,62 @@
                         if (token !== this.mountToken) return;
                         const code = video.error ? video.error.code : '?';
                         console.error(`[TVPlayer] Error del reproductor nativo (código ${code}) en ${server.label}`);
-                        this._fallbackToIframe(server);
+                        this._recoverNative(server);
                     });
-                    video.addEventListener('waiting', () => this._setBuffering(true));
-                    video.addEventListener('playing', () => this._setBuffering(false));
-                    video.addEventListener('canplay', () => this._setBuffering(false));
-                    video.addEventListener('loadedmetadata', () => this._resumeFromProgress());
+                    video.addEventListener('waiting', () => {
+                        if (token !== this.mountToken) return;
+                        this._setBuffering(true);
+                        this._armRecovery(server, token);
+                    });
+                    video.addEventListener('playing', () => {
+                        if (token !== this.mountToken) return;
+                        this.playbackMode = 'direct';
+                        this._setBuffering(false);
+                        this._clearRecoveryTimer();
+                        this._updateServerButtonsState();
+                    });
+                    video.addEventListener('loadedmetadata', () => {
+                        if (token === this.mountToken) {
+                            this._resumeFromProgress();
+                            this._loadSkipSegments(token);
+                        }
+                    });
+                    let lastTime = -1;
                     video.addEventListener('timeupdate', () => {
+                        if (token !== this.mountToken) return;
+                        if (!video.paused && !video.ended && video.currentTime !== lastTime) {
+                            lastTime = video.currentTime;
+                            this._clearRecoveryTimer();
+                            this._armRecovery(server, token);
+                        }
                         this._updateProgress();
+                        this._updateSkipPrompt();
                         this._persistProgress(false);
                     });
                     video.addEventListener('pause', () => {
+                        if (token !== this.mountToken) return;
+                        this._clearRecoveryTimer();
                         this._persistProgress(true);
                         this._showOSD();
                     });
                     video.addEventListener('ended', () => {
+                        if (token !== this.mountToken) return;
+                        this._clearRecoveryTimer();
                         this._persistProgress(true);
                         this._onEnded();
                     });
 
-                    const source = document.createElement('source');
-                    source.src = stream.url;
-                    source.type = stream.type;
-                    source.addEventListener('error', () => {
-                        if (token !== this.mountToken) return;
-                        console.error(`[TVPlayer] La fuente directa de ${server.label} no cargó`);
-                        this._fallbackToIframe(server);
+                    if (!avplay) {
+                        const source = document.createElement('source');
+                        source.src = stream.url;
+                        source.type = stream.type;
+                        source.addEventListener('error', () => {
+                            if (token !== this.mountToken) return;
+                            console.error(`[TVPlayer] La fuente directa de ${server.label} no cargó`);
+                            this._recoverNative(server);
                     });
                     video.appendChild(source);
+                    }
 
                     this.container.innerHTML = '';
                     this.container.appendChild(video);
@@ -329,15 +401,103 @@
 
                     const playPromise = video.play();
                     if (playPromise && playPromise.catch) {
-                        playPromise.catch((err) => console.warn('[TVPlayer] play() rechazado:', err && err.message));
+                        playPromise.catch((err) => {
+                            if (token !== this.mountToken || (err && err.name === 'AbortError')) return;
+                            if (err && err.name === 'NotAllowedError') {
+                                this._clearRecoveryTimer();
+                                this._setBuffering(false);
+                                this._showNotification('Pulsa OK para iniciar el video');
+                            } else this._recoverNative(server);
+                        });
                     }
                     this._showOSD();
                 })
                 .catch((err) => {
                     if (token !== this.mountToken) return;
                     console.error(`[TVPlayer] No se pudo extraer el video de ${server.label}:`, err);
-                    this._fallbackToIframe(server);
+                    this._recoverNative(server);
                 });
+        }
+
+        async _loadSkipSegments(token) {
+            if (!window.TVSkip || !this.video) return;
+            const request = ++this.skipRequestToken;
+            const video = this.video;
+            const segments = await window.TVSkip.load(this.currentEpisode, video.duration);
+            if (token !== this.mountToken || request !== this.skipRequestToken || video !== this.video) return;
+            this.skipSegments = segments;
+            this._updateSkipPrompt();
+        }
+
+        _updateSkipPrompt() {
+            const button = document.getElementById('player-skip');
+            const time = this.video ? this.video.currentTime : -1;
+            this.activeSkip = this.video && !this.isServerBarVisible && !this._nextPromptUrl
+                ? this.skipSegments.find(segment => time >= segment.start && time < segment.end) || null : null;
+            if (!button) return;
+            button.hidden = !this.activeSkip;
+            if (this.activeSkip) button.textContent = 'OK · ' + (this.activeSkip.type === 'recap' ? 'Saltar resumen' : 'Saltar introducción');
+        }
+
+        _skipSegment() {
+            if (!this.video || !this.activeSkip) return;
+            const end = this.activeSkip.end;
+            try {
+                this.video.currentTime = end;
+                this.activeSkip = null;
+                const button = document.getElementById('player-skip');
+                if (button) button.hidden = true;
+                this._showNotification('Saltado');
+            } catch (error) { this._showNotification('No se pudo saltar este segmento'); }
+        }
+
+        _clearRecoveryTimer() {
+            clearTimeout(this.recoveryTimer);
+            this.recoveryTimer = null;
+        }
+
+        _armRecovery(server, token) {
+            if (this.recoveryTimer) return;
+            this.recoveryTimer = setTimeout(() => {
+                this.recoveryTimer = null;
+                if (token === this.mountToken && this.isPlaying) this._recoverNative(server);
+            }, 20000);
+        }
+
+        _rememberPosition() {
+            if (this.video && isFinite(this.video.currentTime) && this.video.currentTime > 0) {
+                this._resumeTime = this.video.currentTime;
+            }
+        }
+
+        _recoverNative(server) {
+            const sources = this.streamSources;
+            const next = this.streamSourceIndex + 1;
+            if (next < sources.length) {
+                this._teardownMedia();
+                this._showNotification(`Probando otra calidad: ${sources[next].quality}`);
+                this._mountNative(server, sources, next);
+            } else this._fallbackToIframe(server);
+        }
+
+        retryServer() {
+            if (!this.currentEpisode) return;
+            this._failedNative = {};
+            this._mountCurrentServer();
+        }
+
+        selectQuality(index) {
+            if (index < 0 || index >= this.streamSources.length) return;
+            const server = this.servers[this.currentServerIndex];
+            const sources = this.streamSources;
+            this._teardownMedia();
+            this._mountNative(server, sources, index);
+        }
+
+        changeEpisode(direction) {
+            const ep = this.currentEpisode;
+            const url = ep && (direction > 0 ? ep.nextUrl : ep.prevUrl);
+            if (url && this.onEpisodeChange) this.onEpisodeChange(url);
         }
 
         _fallbackToIframe(server) {
@@ -363,8 +523,17 @@
          * Respaldo: iframe sandboxed del servidor (con su propio reproductor y anuncios)
          */
         _mountIframe(server) {
+            this.playbackMode = 'web';
+            this._clearRecoveryTimer();
+            this._setBuffering(false);
+            this._updateServerButtonsState();
             const iframe = document.createElement('iframe');
             const targetUrl = this._enhanceAutoplayUrl(server.url);
+            if (!/^https?:\/\//i.test(targetUrl)) {
+                this._showStatus('La dirección del servidor web no es válida');
+                return;
+            }
+            const token = this.mountToken;
 
             // SANDBOX CRÍTICO: bloquea pop-ups, pop-unders y navegación fuera de la app
             // No incluimos 'allow-popups' ni 'allow-top-navigation'
@@ -372,17 +541,90 @@
             iframe.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
             iframe.setAttribute('frameborder', '0');
             iframe.setAttribute('tabindex', '-1');
+            iframe.setAttribute('title', `Reproductor web: ${server.label || 'Servidor'}`);
             iframe.setAttribute('scrolling', 'no');
             iframe.style.cssText = 'width: 100%; height: 100%; border: none; background: #000; position: absolute; top: 0; left: 0; z-index: 1;';
+            iframe.addEventListener('load', () => {
+                if (token !== this.mountToken || this.iframe !== iframe) return;
+                clearTimeout(this.webLoadTimer);
+                this.webLoadTimer = null;
+                // load solo indica navegación: no confirma reproducción ni ausencia de bloqueo.
+                this._setWebStatus('Página abierta. Si no inicia, activa el control web o prueba otro servidor.');
+            });
+            iframe.addEventListener('error', () => {
+                if (token !== this.mountToken) return;
+                this._setWebStatus('No se pudo abrir la página. Usa Opciones para reintentar o cambiar servidor.');
+            });
             iframe.src = targetUrl;
 
             this.container.innerHTML = '';
             this.container.appendChild(iframe);
             this.iframe = iframe;
+            this._showWebControls(true);
+            this._setWebStatus('Abriendo reproductor web… No todos los proveedores admiten este motor de TV.');
+            this.webLoadTimer = setTimeout(() => {
+                if (token !== this.mountToken) return;
+                this._setWebStatus('La página está tardando. Puedes reintentar, cambiar servidor o abrir el navegador.');
+            }, 15000);
+            if (window.appNavigation) window.appNavigation.refreshFocus('#player-web-activate');
 
             // Capa transparente superior que asegura captura de clicks/foco si es necesario
             this._createShield();
             this._showOSD();
+        }
+
+        _setWebStatus(message) {
+            const status = document.getElementById('player-web-status');
+            const server = this.servers[this.currentServerIndex];
+            let warning = '';
+            try {
+                const host = new URL(server && server.url).hostname;
+                if (/(^|\.)(bysesukior\.com|rpmvid\.com|abyssplayer\.com)$/i.test(host)) {
+                    warning = ' Este proveedor puede requerir un motor más reciente que el de tu TV; prefiere un servidor DIRECTO.';
+                }
+            } catch (e) { /* la URL inválida se informa al montar el iframe */ }
+            if (status) status.textContent = message + warning;
+        }
+
+        _showWebControls(show) {
+            const controls = document.getElementById('player-web-controls');
+            if (controls) controls.classList.toggle('hidden', !show);
+            const hints = document.getElementById('player-native-hints');
+            if (hints) hints.classList.toggle('hidden', show);
+        }
+
+        activateWebControl() {
+            if (!this.iframe || !this.isPlaying || this.isServerBarVisible) return;
+            this.webInteraction = true;
+            this._updateNavigationLock();
+            const controls = document.getElementById('player-web-controls');
+            if (controls) controls.classList.add('is-interacting');
+            this._setWebStatus('Control del servidor: usa sus flechas y OK. La app recuperará el mando en 15 segundos.');
+            clearTimeout(this.webControlTimer);
+            const token = this.mountToken;
+            this.webControlTimer = setTimeout(() => {
+                if (token === this.mountToken) this.releaseWebControl(true);
+            }, 15000);
+            this.iframe.focus();
+        }
+
+        releaseWebControl(restoreFocus) {
+            clearTimeout(this.webControlTimer);
+            this.webControlTimer = null;
+            const wasInteracting = this.webInteraction;
+            this.webInteraction = false;
+            const controls = document.getElementById('player-web-controls');
+            if (controls) controls.classList.remove('is-interacting');
+            this._updateNavigationLock();
+            if (!restoreFocus || !wasInteracting) return;
+            if (document.fullscreenElement === this.iframe && document.exitFullscreen) {
+                const exit = document.exitFullscreen();
+                if (exit && exit.catch) exit.catch(() => {});
+            }
+            if (this.iframe) this.iframe.blur();
+            window.focus();
+            if (window.appNavigation) window.appNavigation.refreshFocus('#player-web-activate');
+            this._setWebStatus('Mando de vuelta en la app. Si el servidor no responde, prueba otro o abre el navegador.');
         }
 
         /**
@@ -391,7 +633,7 @@
          */
         _updateNavigationLock() {
             if (!window.appNavigation) return;
-            window.appNavigation.enabled = !(this.isPlaying && this.video && !this.isServerBarVisible);
+            window.appNavigation.enabled = !this.webInteraction && !(this.isPlaying && this.video && !this.isServerBarVisible);
         }
 
         _setBuffering(isBuffering) {
@@ -430,6 +672,15 @@
             if (!this.video || !window.TVStorage || !this.currentEpisode) return;
             const saved = window.TVStorage.getProgress(this.currentEpisode.url);
             const duration = this.video.duration;
+            if (this._resumeTime !== null && isFinite(duration) && duration > 0) {
+                const time = Math.min(this._resumeTime, Math.max(0, duration - 1));
+                try {
+                    this.video.currentTime = time;
+                    this._resumeTime = null;
+                    this._showNotification(`Continuando en ${this._formatTime(time)}`);
+                } catch (e) { /* se conserva la posición si el medio aún no permite buscar */ }
+                return;
+            }
             if (saved && saved.time > 30 && isFinite(duration) && saved.time < duration - 60) {
                 this.video.currentTime = saved.time;
                 this._showNotification(`Reanudando en ${this._formatTime(saved.time)}`);
@@ -437,7 +688,7 @@
         }
 
         /**
-         * Guarda la posición (cada ~5s o forzado) y marca visto al pasar el 90%
+         * Guarda la posición (cada ~5s o forzado) y marca visto al pasar el 95%
          */
         _persistProgress(force) {
             if (!this.video || !window.TVStorage || !this.currentEpisode) return;
@@ -450,7 +701,7 @@
             if (!isFinite(duration) || duration <= 0) return;
 
             window.TVStorage.saveProgress(this.currentEpisode.url, time, duration);
-            if (time / duration >= 0.9 && !window.TVStorage.isWatched(this.currentEpisode.url)) {
+            if (time / duration >= 0.95 && !window.TVStorage.isWatched(this.currentEpisode.url)) {
                 window.TVStorage.setWatched(this.currentEpisode.url, true);
             }
         }
@@ -478,6 +729,7 @@
             const label = document.getElementById('player-next-label');
             if (!box) return;
             this._nextPromptUrl = nextUrl;
+            this._updateSkipPrompt();
             box.classList.add('is-visible');
 
             let remaining = seconds;
@@ -526,6 +778,7 @@
             const duration = isFinite(this.video.duration) ? this.video.duration : Infinity;
             this.video.currentTime = Math.max(0, Math.min(duration, this.video.currentTime + seconds));
             this._updateProgress();
+            this._updateSkipPrompt();
             this._showNotification(`${seconds > 0 ? '⏩ +' : '⏪ '}${seconds}s`);
             this._showOSD();
         }
@@ -533,7 +786,8 @@
         _togglePlay() {
             if (!this.video) return;
             if (this.video.paused) {
-                this.video.play();
+                const promise = this.video.play();
+                if (promise && promise.catch) promise.catch(() => this._showNotification('No se pudo iniciar. Abre Opciones → Reintentar.'));
                 this._showNotification('▶ Reproduciendo');
             } else {
                 this.video.pause();
@@ -563,7 +817,7 @@
             // Los reproductores web (iframe) se quedan con el foco y las teclas del control dejan de llegar a la app.
             // window.focus() no alcanza: hay que sacar el foco del iframe y ponerlo en un elemento de la app.
             const reclaim = () => {
-                if (!this.isPlaying) return;
+                if (!this.isPlaying || this.webInteraction) return;
                 const active = document.activeElement;
                 if (active && active.tagName === 'IFRAME') {
                     this._debug('foco recuperado del iframe');
@@ -626,7 +880,7 @@
                 el.type = 'button';
                 el.className = className;
                 el.setAttribute('data-focusable', 'true');
-                el.innerHTML = html;
+                el.textContent = html;
                 el.addEventListener('click', onClick);
                 return el;
             };
@@ -639,17 +893,34 @@
 
             this.serverList.innerHTML = '';
 
-            // Panel vertical (▲▼ moverse, OK elegir, ◀ o Atrás cerrar): primero los servidores, luego la serie
+            this.serverList.appendChild(heading('Reproducción'));
+            if (this.currentEpisode && this.currentEpisode.prevUrl) {
+                this.serverList.appendChild(button('player-action-btn', '◀ Episodio anterior', () => this.changeEpisode(-1)));
+            }
+            if (this.currentEpisode && this.currentEpisode.nextUrl) {
+                this.serverList.appendChild(button('player-action-btn', 'Siguiente episodio ▶', () => this.changeEpisode(1)));
+            }
+            this.serverList.appendChild(button('player-action-btn', '↻ Reintentar servidor', () => this.retryServer()));
+            if (this.streamSources.length) {
+                this.serverList.appendChild(heading('Calidad'));
+                this.streamSources.forEach((source, index) => {
+                    const qualityNames = { full: '1080p', hd: '720p', sd: '480p', low: '360p', lowest: '240p', mobile: '144p' };
+                    const label = qualityNames[source.quality] || source.quality || 'Original';
+                    this.serverList.appendChild(button('player-action-btn', `${index === this.streamSourceIndex ? '✓ ' : ''}${label}`, () => this.selectQuality(index)));
+                });
+            }
             this.serverList.appendChild(heading('Servidor'));
             this.servers.forEach((server, index) => {
                 const direct = window.TVScraper.canPlayDirect(server);
-                const btn = button(
-                    `player-server-btn ${index === this.currentServerIndex ? 'is-active' : ''}`,
-                    `<span class="server-name">${server.label}</span>` +
-                    (direct ? '<span class="server-direct">SIN ANUNCIOS</span>' : '<span class="server-web">WEB</span>') +
-                    '<span class="server-now">▶ Reproduciendo</span>',
-                    () => this.switchServer(index)
-                );
+                const btn = button(`player-server-btn ${index === this.currentServerIndex ? 'is-active' : ''}`, '', () => this.switchServer(index));
+                const name = document.createElement('span');
+                name.className = 'server-name';
+                name.textContent = server.label;
+                const badge = document.createElement('span');
+                badge.className = 'server-mode';
+                badge.textContent = direct ? 'DIRECTO' : 'WEB';
+                btn.appendChild(name);
+                btn.appendChild(badge);
                 btn.setAttribute('data-server-index', index);
                 this.serverList.appendChild(btn);
             });
@@ -660,17 +931,26 @@
                 const favorite = window.TVStorage && window.TVStorage.isFavorite(series.url);
                 const favButton = button('player-action-btn', favorite ? '✓ En mi lista' : '★ Mi lista', () => this._toggleFavorite(favButton));
                 this.serverList.appendChild(favButton);
-                this.serverList.appendChild(button('player-action-btn', '<i class="dot red"></i> Ir a la serie', () => this.openSeries()));
+                this.serverList.appendChild(button('player-action-btn', 'Ir a la serie', () => this.openSeries()));
             }
-            this.serverList.appendChild(button('player-action-btn', '🌐 Ver en el navegador del TV', () => this.openInBrowser()));
+            this.serverList.appendChild(button('player-action-btn', '🌐 Abrir este servidor en el navegador', () => this.openInBrowser(true)));
+            this.serverList.appendChild(button('player-action-btn', 'Abrir lista de servidores en el navegador', () => this.openInBrowser()));
+            this._updateServerButtonsState();
+            if (this.isServerBarVisible && window.appNavigation) window.appNavigation.refreshFocus('.player-server-btn.is-active');
         }
 
         _updateServerButtonsState() {
             if (!this.serverList) return;
             const buttons = this.serverList.querySelectorAll('.player-server-btn');
             buttons.forEach((btn, idx) => {
-                btn.classList.toggle('is-active', idx === this.currentServerIndex);
+                const active = idx === this.currentServerIndex;
+                btn.classList.toggle('is-active', active);
+                const badge = btn.querySelector('.server-mode');
+                if (badge) badge.textContent = active && this.playbackMode === 'web' ? 'WEB' : (window.TVScraper.canPlayDirect(this.servers[idx]) ? 'DIRECTO' : 'WEB');
             });
+            const source = this.streamSources[this.streamSourceIndex];
+            const server = this.servers[this.currentServerIndex];
+            if (this.serverLabelEl && server) this.serverLabelEl.textContent = `${server.label} · ${this.playbackMode === 'web' ? 'Reproductor web' : (source ? source.quality : 'Cargando…')}`;
         }
 
         /**
@@ -697,14 +977,20 @@
          * Abre la página de servidores del sitio en el navegador del TV: ahí los reproductores web
          * corren en su propio dominio, con cursor (flechas + OK) y sus anuncios, igual que en un computador
          */
-        openInBrowser() {
-            const url = (this.currentEpisode && this.currentEpisode.containerUrl) ||
-                (this.servers[this.currentServerIndex] || {}).url;
+        openInBrowser(currentServer = false) {
+            const serverUrl = (this.servers[this.currentServerIndex] || {}).url;
+            const url = currentServer ? serverUrl : ((this.currentEpisode && this.currentEpisode.containerUrl) || serverUrl);
             if (!url) return;
 
+            this.releaseWebControl(true);
             this._persistProgress(true);
             if (this.video && !this.video.paused) this.video.pause();
-            if (this.isServerBarVisible) this.toggleServerBar();
+            // No hay una API universal para pausar iframes: retirarlo evita audio detrás del navegador.
+            if (this.iframe) {
+                this._teardownMedia();
+                this._showStatus('Reproductor web detenido. Usa Reintentar para volver a abrirlo aquí.', false);
+                if (!this.isServerBarVisible) this.toggleServerBar();
+            } else if (this.isServerBarVisible) this.toggleServerBar();
 
             const tizenApp = window.tizen && window.tizen.application;
             if (!tizenApp || !window.tizen.ApplicationControl) {
@@ -743,9 +1029,15 @@
          * Toggle de la barra de servidores inferior
          */
         toggleServerBar() {
+            this.releaseWebControl(true);
             this.isServerBarVisible = !this.isServerBarVisible;
+            this._updateSkipPrompt();
             this._debug(`panel ${this.isServerBarVisible ? 'abierto' : 'cerrado'} desde ${(new Error().stack || '').split('\n')[2] || '?'}`);
             this._updateNavigationLock();
+            if (this.iframe) {
+                const controls = document.getElementById('player-web-controls');
+                if (controls) controls.classList.toggle('hidden', this.isServerBarVisible);
+            }
             const main = document.getElementById('app-main');
             if (main) main.scrollTop = 0;
             if (this.serverBar) {
@@ -761,19 +1053,24 @@
                         nav.currentFocus = null;
                     }
                     window.focus();
+                    if (this.iframe && nav) nav.refreshFocus('#player-web-activate');
                 }
             }
             this._showOSD();
         }
 
-        _showStatus(msg) {
+        _showStatus(msg, loading = true) {
             if (this.container) {
-                this.container.innerHTML = `
-                    <div class="player-loading-state">
-                        <div class="spinner"></div>
-                        <p>${msg}</p>
-                    </div>
-                `;
+                const wrapper = document.createElement('div');
+                wrapper.className = 'player-loading-state';
+                const spinner = document.createElement('div');
+                spinner.className = 'spinner';
+                const text = document.createElement('p');
+                text.textContent = msg;
+                if (loading) wrapper.appendChild(spinner);
+                wrapper.appendChild(text);
+                this.container.innerHTML = '';
+                this.container.appendChild(wrapper);
             }
         }
 
@@ -807,6 +1104,14 @@
             this._debug(`tecla ${code} panel=${this.isServerBarVisible} video=${!!this.video} nav=${window.appNavigation && window.appNavigation.enabled} foco=${document.activeElement && document.activeElement.tagName}`);
 
             const K = window.TVKeys || {};
+            if (this.webInteraction) {
+                if (code === K.RETURN || code === K.COLOR_YELLOW) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.releaseWebControl(true);
+                }
+                return;
+            }
 
             // Aviso "Siguiente episodio" (va antes que Atrás): OK lo reproduce ya, cualquier otra tecla lo cancela
             if (this._nextPromptUrl) {
@@ -816,6 +1121,13 @@
                 } else {
                     this.cancelNextPrompt();
                 }
+                return;
+            }
+
+            if (code === K.STOP) {
+                e.preventDefault();
+                this.destroy();
+                if (this.onClose) this.onClose();
                 return;
             }
 
@@ -849,10 +1161,22 @@
                 return;
             }
 
-            // Verde: saltar intro (+85s)
+            if (this.video && !this.isServerBarVisible && this.activeSkip && (code === K.ENTER || code === K.COLOR_GREEN)) {
+                e.preventDefault();
+                this._skipSegment();
+                return;
+            }
+
+            // Verde sin tiempos verificados: avance manual de 85 segundos.
             if (this.video && !this.isServerBarVisible && code === K.COLOR_GREEN) {
                 e.preventDefault();
                 this._seekBy(85);
+                return;
+            }
+
+            if (this.iframe && !this.isServerBarVisible && code === K.PLAY) {
+                e.preventDefault();
+                this.activateWebControl();
                 return;
             }
 
@@ -935,6 +1259,7 @@
          */
         destroy() {
             this.isPlaying = false;
+            this._clearRecoveryTimer();
             this.loadId++; // anula cualquier carga de episodio pendiente
             this.isServerBarVisible = false;
             this._stopFocusKeeper();
@@ -966,6 +1291,8 @@
             }
 
             clearTimeout(this.osdTimeout);
+            this._resumeTime = null;
+            this.streamSources = [];
         }
     }
 

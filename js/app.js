@@ -15,7 +15,9 @@
             this.catalogHasNext = false;
             this.searchDebounceTimer = null;
             this.searchQuery = '';
+            this.searchResultsQuery = null;
             this.searchSeq = 0;
+            this.viewLoadId = 0;
         }
 
         async init() {
@@ -108,6 +110,11 @@
             // Un selector de opciones abierto se cierra primero
             if (window.TVPicker && window.TVPicker.isOpen()) {
                 window.TVPicker.close(true);
+                return;
+            }
+
+            if (this.currentRoute.startsWith('#/watch') && this.player.webInteraction) {
+                this.player.releaseWebControl(true);
                 return;
             }
 
@@ -234,6 +241,10 @@
                 this.player.destroy();
             }
             this.currentRoute = hash;
+            this.viewLoadId++;
+            this.searchSeq++;
+            clearTimeout(this.searchDebounceTimer);
+            window.TVUI.showLoading(false);
 
             // Mantener historial de navegación para retroceso
             if (!this.viewStack.length || this.viewStack[this.viewStack.length - 1] !== hash) {
@@ -261,6 +272,9 @@
                     break;
                 case '/settings':
                     await this._loadSettingsView();
+                    break;
+                case '/history':
+                    this._loadHistoryView();
                     break;
                 case '/mylist':
                     this._loadMyListView();
@@ -293,20 +307,21 @@
         async _loadHomeView() {
             window.TVUI.switchView('home');
             window.TVUI.showLoading(true, 'Cargando estrenos de AnimeYT...');
-            const route = this.currentRoute;
+            const loadId = ++this.viewLoadId;
             try {
-                // Ranking en paralelo para la fila "Top 10"; si falla, Inicio se muestra igual
-                const [data, ranking] = await Promise.all([
-                    window.TVScraper.getHomeContent(),
-                    window.TVScraper.getRanking('7d').catch(() => [])
-                ]);
-                if (this.currentRoute !== route) return; // ya se navegó a otra pantalla
-                window.TVUI.renderHome(data, ranking);
+                const data = await window.TVScraper.getHomeContent();
+                if (loadId !== this.viewLoadId) return;
+                window.TVUI.renderHome(data, []);
+                this._refreshSeries(loadId, false);
+                window.TVScraper.getRanking('7d').then(ranking => {
+                    if (loadId === this.viewLoadId) window.TVUI.renderHomeRanking(ranking);
+                }).catch(() => {});
                 this.nav.refreshFocus('.billboard-actions [data-focusable="true"]');
             } catch (err) {
+                if (loadId !== this.viewLoadId) return;
                 window.TVUI.showToast(`Error cargando estrenos: ${err && err.message ? err.message : err}`);
             } finally {
-                window.TVUI.showLoading(false);
+                if (loadId === this.viewLoadId) window.TVUI.showLoading(false);
             }
         }
 
@@ -315,15 +330,14 @@
          */
         async _loadSearchView(params) {
             window.TVUI.switchView('search');
+            const viewId = this.viewLoadId;
             window.TVUI.renderKeyboard();
 
-            if (params.q && params.q !== this.searchQuery) {
-                this.searchQuery = params.q;
-                window.TVUI.setSearchQuery(this.searchQuery);
-                await this._executeSearch(this.searchQuery);
-            } else {
-                window.TVUI.setSearchQuery(this.searchQuery);
-            }
+            if (params.q && params.q !== this.searchQuery) this.searchQuery = params.q;
+            window.TVUI.setSearchQuery(this.searchQuery);
+            const query = this.searchQuery.trim();
+            if (query.length >= 2 && this.searchResultsQuery !== query) await this._executeSearch(query);
+            if (viewId !== this.viewLoadId) return;
             // Al volver desde una ficha, el foco queda en los resultados; si no, en la "a"
             this.nav.refreshFocus(this.searchQuery && document.querySelector('#search-results-grid [data-focusable="true"]')
                 ? '#search-results-grid [data-focusable="true"]'
@@ -334,6 +348,7 @@
          * Tecla del teclado propio: actualiza la consulta y busca al dejar de escribir (sin mover el foco)
          */
         _onKeyboardKey(key) {
+            this.searchSeq++;
             if (key === 'space') {
                 if (this.searchQuery && !/\s$/.test(this.searchQuery)) this.searchQuery += ' ';
             } else if (key === 'back') {
@@ -347,8 +362,13 @@
 
             clearTimeout(this.searchDebounceTimer);
             const query = this.searchQuery.trim();
+            if (this.currentRoute.startsWith('#/search')) {
+                const route = query ? `#/search?q=${encodeURIComponent(query)}` : '#/search';
+                history.replaceState(null, '', route);
+                this.currentRoute = route;
+                this.viewStack[this.viewStack.length - 1] = route;
+            }
             if (query.length < 2) {
-                this.searchSeq++; // descarta la búsqueda que todavía esté en camino
                 window.TVUI.setSearchStatus(query ? 'Sigue escribiendo...' : 'Escribe el nombre de un anime');
                 if (!query) window.TVUI.renderSearchResults([], '');
                 return;
@@ -360,10 +380,12 @@
         async _executeSearch(query) {
             if (!query || !query.trim()) return;
             const seq = ++this.searchSeq;
+            const viewId = this.viewLoadId;
             try {
                 const results = await window.TVApi.search(query);
-                if (seq !== this.searchSeq) return; // llegó una búsqueda más nueva
+                if (seq !== this.searchSeq || viewId !== this.viewLoadId || !this.currentRoute.startsWith('#/search')) return;
                 window.TVUI.renderSearchResults(results, query);
+                this.searchResultsQuery = query;
                 // Guardar la consulta en la ruta (sin recargar) para que Atrás desde una ficha la recupere
                 const route = `#/search?q=${encodeURIComponent(query)}`;
                 if (this.currentRoute.indexOf('#/search') === 0 && this.currentRoute !== route) {
@@ -372,6 +394,9 @@
                     this.viewStack[this.viewStack.length - 1] = route;
                 }
             } catch (err) {
+                if (seq !== this.searchSeq || viewId !== this.viewLoadId) return;
+                window.TVUI.renderSearchResults([], '');
+                window.TVUI.setSearchStatus('No se pudo buscar. Intenta de nuevo.');
                 window.TVUI.showToast(`Error en la búsqueda: ${err && err.message ? err.message : err}`);
             }
         }
@@ -385,18 +410,19 @@
             this.catalogPage = page;
 
             window.TVUI.showLoading(true, `Cargando catálogo página ${page}...`);
-            const route = this.currentRoute;
+            const loadId = ++this.viewLoadId;
             try {
                 const data = await window.TVScraper.getCatalog(page, this.catalogFilters);
-                if (this.currentRoute !== route) return; // ya se navegó a otra pantalla
+                if (loadId !== this.viewLoadId) return;
                 this.catalogHasNext = data.hasNext;
                 window.TVUI.renderCatalogFilters(data.filters, this.catalogFilters);
                 window.TVUI.renderCatalog(data);
                 this.nav.refreshFocus('#catalog-results-grid [data-focusable="true"]');
             } catch (err) {
+                if (loadId !== this.viewLoadId) return;
                 window.TVUI.showToast(`Error cargando catálogo: ${err && err.message ? err.message : err}`);
             } finally {
-                window.TVUI.showLoading(false);
+                if (loadId === this.viewLoadId) window.TVUI.showLoading(false);
             }
         }
 
@@ -411,18 +437,20 @@
 
             window.TVUI.switchView('anime');
             window.TVUI.showLoading(true, 'Cargando información del anime...');
-            const route = this.currentRoute;
+            const loadId = ++this.viewLoadId;
             try {
                 const anime = await window.TVScraper.getAnimeDetail(params.url);
-                if (this.currentRoute !== route) return; // ya se navegó a otra pantalla
+                if (loadId !== this.viewLoadId) return;
+                if (window.TVSeries) window.TVSeries.remember(anime, params.url);
                 window.TVStorage.refreshFavorite({ url: anime.url, title: anime.title, image: anime.poster });
                 window.TVUI.renderAnimeDetail(anime);
                 this.nav.refreshFocus('.detail-actions [data-focusable="true"]');
                 window.TVUI.switchView('anime'); // volver arriba tras renderizar
             } catch (err) {
+                if (loadId !== this.viewLoadId) return;
                 window.TVUI.showToast(`Error al cargar la ficha del anime: ${err && err.message ? err.message : err}`);
             } finally {
-                window.TVUI.showLoading(false);
+                if (loadId === this.viewLoadId) window.TVUI.showLoading(false);
             }
         }
 
@@ -461,24 +489,42 @@
             window.TVUI.switchView('ranking');
             const periodo = params.periodo || '7d';
             window.TVUI.showLoading(true, 'Cargando ranking...');
-            const route = this.currentRoute;
+            const loadId = ++this.viewLoadId;
             try {
                 const blocks = await window.TVScraper.getRanking(periodo);
-                if (this.currentRoute !== route) return; // ya se navegó a otra pantalla
+                if (loadId !== this.viewLoadId) return;
                 window.TVUI.renderRanking(blocks, periodo);
                 this.nav.refreshFocus('#ranking-content [data-focusable="true"]');
                 window.TVUI.switchView('ranking'); // volver arriba tras renderizar
             } catch (err) {
+                if (loadId !== this.viewLoadId) return;
                 window.TVUI.showToast(`Error cargando ranking: ${err && err.message ? err.message : err}`);
             } finally {
-                window.TVUI.showLoading(false);
+                if (loadId === this.viewLoadId) window.TVUI.showLoading(false);
             }
+        }
+
+        _loadHistoryView() {
+            window.TVUI.switchView('history');
+            window.TVUI.renderHistory();
+            this.nav.refreshFocus('#history-content [data-focusable="true"]');
         }
 
         _loadMyListView() {
             window.TVUI.switchView('mylist');
             window.TVUI.renderMyList();
             this.nav.refreshFocus('#mylist-content [data-focusable="true"]');
+            this._refreshSeries(this.viewLoadId, true);
+        }
+
+        _refreshSeries(loadId, myList) {
+            if (!window.TVSeries) return;
+            window.TVSeries.refresh(() => loadId === this.viewLoadId, () => {
+                if (loadId !== this.viewLoadId) return;
+                const target = window.TVUI.refreshPersonalized(myList);
+                if (target && this.nav.setFocus) this.nav.setFocus(target, false);
+                else if (!document.documentElement.contains(this.nav.currentFocus)) this.nav.refreshFocus();
+            }).catch(() => {});
         }
 
         /**
@@ -508,6 +554,21 @@
                             img: target.dataset.img || ''
                         }));
                     }
+                } else if (action === 'remove-history') {
+                    const row = target.closest('.history-item');
+                    const next = row && (row.nextElementSibling || row.previousElementSibling);
+                    const nextUrl = next && next.dataset.historyUrl;
+                    window.TVStorage.removeHistory(target.dataset.url);
+                    window.TVUI.renderHistory();
+                    const rows = document.querySelectorAll('.history-item');
+                    let focus = null;
+                    Array.from(rows).forEach(item => { if (item.dataset.historyUrl === nextUrl) focus = item.querySelector('[data-focusable="true"]'); });
+                    if (focus) this.nav.setFocus(focus);
+                    else this.nav.refreshFocus('#history-content [data-focusable="true"]');
+                } else if (action === 'episode-order') {
+                    window.TVUI.episodeDescending = !window.TVUI.episodeDescending;
+                    window.TVUI.renderEpisodeList();
+                    target.textContent = window.TVUI.episodeDescending ? 'Más recientes primero' : 'Desde el episodio 1';
                 } else if (action === 'kbd') {
                     this._onKeyboardKey(target.dataset.key);
                 } else if (action === 'ranking-period') {
@@ -543,6 +604,10 @@
                         this._loadSettingsView();
                     }
                 }
+            });
+
+            document.addEventListener('input', (e) => {
+                if (e.target.id === 'episode-search') window.TVUI.renderEpisodeList(e.target.value);
             });
 
             // Filtros de catálogo

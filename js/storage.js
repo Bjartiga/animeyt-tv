@@ -76,14 +76,15 @@
             if (!item || !item.url) return;
             try {
                 let history = this.getHistory();
-                // Una entrada por anime (o por episodio si no se conoce el anime)
-                history = history.filter(h => h.url !== item.url && !(item.animeUrl && h.animeUrl === item.animeUrl));
+                // Una entrada por episodio; Inicio agrupa las series para Continuar viendo.
+                history = history.filter(h => h.url !== item.url);
                 history.unshift({
                     title: item.title || '',
                     episode: item.episode || '',
                     url: item.url,
                     animeUrl: item.animeUrl || '',
                     image: item.image || '',
+                    nextUrl: item.nextUrl || '',
                     timestamp: Date.now()
                 });
                 // Guardar máximo 50 entradas
@@ -97,10 +98,16 @@
         getHistory: function() {
             try {
                 const data = localStorage.getItem(STORAGE_KEYS.HISTORY);
-                return data ? JSON.parse(data) : [];
+                const parsed = data ? JSON.parse(data) : [];
+                return Array.isArray(parsed) ? parsed.filter(item => item && typeof item.url === 'string') : [];
             } catch (e) {
                 return [];
             }
+        },
+
+        removeHistory: function(url) {
+            this._writeJson(STORAGE_KEYS.HISTORY, this.getHistory().filter(item => item.url !== url));
+            this.clearProgress(url);
         },
 
         /**
@@ -201,7 +208,9 @@
         _readJson: function(key, fallback) {
             try {
                 const data = localStorage.getItem(key);
-                return data ? JSON.parse(data) : fallback;
+                const parsed = data ? JSON.parse(data) : fallback;
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) !== Array.isArray(fallback)) return fallback;
+                return parsed;
             } catch (e) {
                 return fallback;
             }
@@ -233,6 +242,8 @@
             localStorage.removeItem(STORAGE_KEYS.FAVORITES);
             localStorage.removeItem(STORAGE_KEYS.SETTINGS);
             localStorage.removeItem(STORAGE_KEYS.PROGRESS);
+            localStorage.removeItem('animeyt_series_v1');
+            localStorage.removeItem('animeyt_skip_v1');
         }
     };
 

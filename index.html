@@ -32,6 +32,7 @@
             <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="catalog">Catálogo <i class="dot green"></i></button>
             <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="ranking">Ranking</button>
             <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="mylist">Mi lista</button>
+            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="history">Historial</button>
             <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="settings">Ajustes <i class="dot yellow"></i></button>
         </nav>
     </header>
@@ -85,12 +86,26 @@
             <div id="mylist-content"></div>
         </section>
 
+        <section id="view-history" class="view view-page hidden">
+            <h1 class="page-title">Historial</h1>
+            <div id="history-content" class="history-list"></div>
+        </section>
+
         <!-- 6. Reproductor -->
         <section id="view-watch" class="view hidden" data-nav-noscroll>
             <div id="player-viewport" class="player-viewport"></div>
 
             <!-- Recibe el foco cuando se lo quitamos al iframe de un reproductor web -->
             <div id="player-focus-sink" tabindex="-1"></div>
+
+            <div id="player-web-controls" class="player-web-controls hidden">
+                <p id="player-web-status" role="status" aria-live="polite"></p>
+                <div class="player-web-actions">
+                    <button type="button" class="btn btn-primary" id="player-web-activate" data-focusable="true" data-player-web-action="activate">Controlar reproductor web · 15 s</button>
+                    <button type="button" class="btn btn-secondary" data-focusable="true" data-player-web-action="options">Opciones / cambiar servidor</button>
+                    <button type="button" class="btn btn-secondary" data-focusable="true" data-player-web-action="browser">Abrir este servidor en el navegador</button>
+                </div>
+            </div>
 
             <div id="player-buffering" class="player-buffering">
                 <div class="spinner"></div>
@@ -110,10 +125,10 @@
                         <span id="player-progress-time" class="osd-progress-time">0:00 / 0:00</span>
                     </div>
 
-                    <div class="osd-hints">
+                    <div class="osd-hints" id="player-native-hints">
                         <span><b>OK</b> Pausa</span>
                         <span><b>◀ ▶</b> 10s</span>
-                        <span><i class="dot green"></i> Saltar intro</span>
+                        <span><i class="dot green"></i> +85 s</span>
                         <span><b>▼</b> Opciones</span>
                         <span><i class="dot red"></i> Ir a la serie</span>
                         <span><b>CH+ / CH−</b> Episodio</span>
@@ -121,6 +136,8 @@
                     </div>
                 </div>
             </div>
+
+            <button id="player-skip" type="button" class="player-skip" hidden>OK · Saltar introducción</button>
 
             <div id="player-next" class="player-next">
                 <span id="player-next-label" class="player-next-label">Siguiente episodio</span>
@@ -131,7 +148,7 @@
             <div id="player-server-bar" class="player-server-bar" data-nav-scope>
                 <div class="server-bar-title">Opciones</div>
                 <div class="server-bar-hint">▲▼ moverse · OK elegir · ◀ o ↩ cerrar</div>
-                <div id="player-server-list" class="player-server-list"></div>
+                <div id="player-server-list" class="player-server-list" data-player-scroll></div>
             </div>
 
             <div id="player-toast" class="app-toast"></div>
@@ -154,8 +171,12 @@
     <script src="js/storage.js"></script>
     <script src="js/api.js"></script>
     <script src="js/scraper.js"></script>
+    <script src="js/series.js"></script>
+    <script src="js/skip.js"></script>
     <script src="js/navigation.js"></script>
     <script src="js/picker.js"></script>
+    <script src="$WEBAPIS/webapis/webapis.js"></script>
+    <script src="js/avplay.js"></script>
     <script src="js/player.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/app.js"></script>

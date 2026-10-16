@@ -5,7 +5,7 @@
 (function(window) {
     'use strict';
 
-    const APP_VERSION = '1.6.0';
+    const APP_VERSION = '1.9.0';
 
     // Fila de Inicio: posición vertical donde queda la fila enfocada (debajo del billboard compacto)
     const HOME_ROW_ANCHOR = 300;
@@ -67,7 +67,7 @@
         const badge = anime.newEpisode ? `<span class="card-badge card-badge-new">NUEVO ${esc(anime.newEpisode)}</span>` : '';
         const score = String(anime.score || anime.rating || '').replace(/[★☆\s]+/g, ' ').trim();
         const sub = [anime.type, score ? `★ ${score}` : '', anime.season || anime.status]
-            .filter(Boolean).join(' · ');
+            .filter(Boolean).concat(anime.notice || []).join(' · ');
         return `
             <button type="button" class="card card-poster" data-focusable="true" data-action="open-anime"
                 data-url="${esc(anime.url)}"
@@ -84,16 +84,28 @@
     /**
      * Episodios recientes de una serie de Mi lista que aún no se vieron
      */
-    function newEpisodesFor(favoriteUrl, latestEpisodes) {
-        return (latestEpisodes || []).filter(ep =>
-            window.TVScraper.episodeBelongsTo(ep.animeUrl, favoriteUrl) && !isWatched(ep.url));
-    }
-
-    function favoritePosters(latestEpisodes) {
+    function favoritePosters() {
         const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
         return favorites.map(f => {
-            const fresh = newEpisodesFor(f.url, latestEpisodes);
-            return posterCard({ url: f.url, title: f.title, image: f.image, newEpisode: fresh.length ? fresh[0].episode || 'EP' : '' });
+            const state = window.TVSeries ? window.TVSeries.status(f.url) : null;
+            return posterCard({ url: f.url, title: f.title, image: f.image,
+                newEpisode: state && state.fresh ? state.latest.episode || 'EP' : '',
+                notice: state ? (state.pending ? state.pending + ' sin ver' : 'Al día') : 'Sin comprobar' });
+        }).join('');
+    }
+
+    function continueCards() {
+        const entries = window.TVSeries ? window.TVSeries.continuing() : [];
+        return entries.map(h => episodeCard(h, { kicker: 'Continuar viendo',
+            cardSub: (h.resume ? 'Continuar · ' : 'Ver · ') + (h.episode || 'Siguiente episodio') })).join('');
+    }
+
+    function followedCards() {
+        const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
+        return favorites.map(f => {
+            const state = window.TVSeries ? window.TVSeries.status(f.url) : null;
+            if (!state || !state.fresh) return '';
+            return episodeCard(Object.assign({}, state.latest, { title: f.title, animeTitle: f.title, animeUrl: f.url }), { kicker: 'Nuevo en Mi lista' });
         }).join('');
     }
 
@@ -111,10 +123,10 @@
         `;
     }
 
-    function row(title, cardsHtml) {
-        if (!cardsHtml) return '';
+    function row(title, cardsHtml, id) {
+        if (!cardsHtml) return id ? `<section id="${id}" class="row" data-nav-row hidden></section>` : '';
         return `
-            <section class="row" data-nav-row>
+            <section ${id ? `id="${id}"` : ''} class="row" data-nav-row>
                 <h2 class="row-title">${esc(title)}</h2>
                 <div class="row-viewport">
                     <div class="row-track" data-row-track>${cardsHtml}</div>
@@ -134,15 +146,26 @@
                 const el = entry.target;
                 el.style.backgroundImage = cssUrl(el.getAttribute('data-bg'));
                 imageObserver.unobserve(el);
+                pendingImages.delete(el);
             });
         }, { rootMargin: '300px' })
         : null;
 
+    const pendingImages = new Set();
     function observeImages(root) {
+        if (imageObserver) pendingImages.forEach(el => {
+            if (!document.documentElement.contains(el)) {
+                imageObserver.unobserve(el);
+                pendingImages.delete(el);
+            }
+        });
         (root || document).querySelectorAll('[data-bg]:not([data-bg-ready])').forEach(function(el) {
             el.setAttribute('data-bg-ready', '1');
             if (!el.getAttribute('data-bg')) return;
-            if (imageObserver) imageObserver.observe(el);
+            if (imageObserver) {
+                pendingImages.add(el);
+                imageObserver.observe(el);
+            }
             else el.style.backgroundImage = cssUrl(el.getAttribute('data-bg'));
         });
     }
@@ -160,6 +183,7 @@
                 catalog: document.getElementById('view-catalog'),
                 anime: document.getElementById('view-anime'),
                 mylist: document.getElementById('view-mylist'),
+                history: document.getElementById('view-history'),
                 ranking: document.getElementById('view-ranking'),
                 watch: document.getElementById('view-watch'),
                 settings: document.getElementById('view-settings')
@@ -279,37 +303,8 @@
             // Filas
             let rows = '';
 
-            // Nuevos episodios de las series que sigues (Mi lista), aún sin ver
-            const favorites = window.TVStorage ? window.TVStorage.getFavorites() : [];
-            const followedNew = (data.episodes || []).filter(ep =>
-                !isWatched(ep.url) && favorites.some(f => window.TVScraper.episodeBelongsTo(ep.animeUrl, f.url)));
-            rows += row('Nuevos episodios de Mi lista', followedNew.map(ep => episodeCard({
-                url: ep.url,
-                title: ep.title,
-                animeTitle: ep.title,
-                episode: ep.episode,
-                animeUrl: ep.animeUrl,
-                image: ep.image
-            }, { kicker: 'Nuevo en Mi lista' })).join(''));
-
-            // Continuar viendo: historial con progreso a medias
-            const history = window.TVStorage ? window.TVStorage.getHistory() : [];
-            const continueCards = history
-                .filter(h => {
-                    const p = progressPercent(h.url);
-                    return p > 0 && p < 95;
-                })
-                .slice(0, 15)
-                .map(h => episodeCard({
-                    url: h.url,
-                    title: h.title,
-                    animeTitle: h.title,
-                    episode: h.episode && h.episode !== h.title ? h.episode : '',
-                    animeUrl: h.animeUrl,
-                    image: h.image
-                }, { kicker: 'Continuar viendo' }))
-                .join('');
-            rows += row('Continuar viendo', continueCards);
+            rows += row('Continuar viendo', continueCards(), 'home-continue-row');
+            rows += row('Nuevos episodios de Mi lista', followedCards(), 'home-followed-row');
 
             const latestCards = (data.episodes || []).map(ep => episodeCard({
                 url: ep.url,
@@ -322,8 +317,7 @@
             rows += row('Últimos episodios', latestCards);
 
             // Top 10 de la semana (lo más visto del ranking; si no está, la primera lista)
-            const top = (ranking || []).find(b => b.id === 'ranking-vistos') || (ranking || [])[0];
-            if (top) rows += row('Top 10 de la semana', top.entries.map(rankCard).join(''));
+            rows += '<section id="home-ranking-row" class="row" data-nav-row hidden></section>';
 
             const featuredCards = heroes.map(h => `
                 <button type="button" class="card card-wide" data-focusable="true" data-action="open-anime" data-url="${esc(h.url)}"
@@ -334,7 +328,7 @@
             `).join('');
             rows += row('Destacados de la temporada', featuredCards);
 
-            rows += row('Mi lista', favoritePosters(data.episodes));
+            rows += row('Mi lista', favoritePosters(), 'home-mylist-row');
 
             container.innerHTML = `
                 <div class="billboard" id="home-billboard">
@@ -357,6 +351,15 @@
 
             this.views.home.classList.remove('is-browsing');
             this._setBillboard(this.featured);
+            observeImages(container);
+        },
+
+        renderHomeRanking: function(ranking) {
+            const container = document.getElementById('home-ranking-row');
+            const top = (ranking || []).find(block => block.id === 'ranking-vistos') || (ranking || [])[0];
+            if (!container || !top) return;
+            container.hidden = false;
+            container.innerHTML = `<h2 class="row-title">Top 10 de la semana</h2><div class="row-viewport"><div class="row-track" data-row-track>${top.entries.map(rankCard).join('')}</div></div>`;
             observeImages(container);
         },
 
@@ -467,6 +470,9 @@
             const container = document.getElementById('anime-detail-content');
             if (!container) return;
 
+            this.detailAnime = anime;
+            this.episodeDescending = false;
+            this.episodeQuery = '';
             // El sitio lista del más nuevo al más viejo; mostrar en orden (EP 1 primero)
             const episodes = (anime.episodes || []).slice().reverse();
             const resume = this._resumeTarget(episodes);
@@ -479,15 +485,6 @@
                     ▶ ${esc(resume.label)}
                 </button>
             ` : '';
-
-            const episodeCards = episodes.map(ep => episodeCard({
-                url: ep.url,
-                title: ep.title,
-                animeTitle: anime.title,
-                episode: ep.episode,
-                animeUrl: anime.url,
-                image: ep.image || anime.backdrop || anime.poster
-            }, { cardTitle: ep.episode || ep.title, cardSub: ep.title !== ep.episode ? ep.title : '' })).join('');
 
             container.innerHTML = `
                 <div class="detail">
@@ -513,10 +510,55 @@
                     </div>
                     <div class="detail-episodes">
                         <h2 class="section-title">Episodios</h2>
-                        ${episodes.length ? `<div class="episode-grid">${episodeCards}</div>` : '<p class="empty-msg">Este anime aún no tiene episodios publicados.</p>'}
+                        <div class="episode-tools">
+                            <input id="episode-search" class="search-input" type="search" data-focusable="true" placeholder="Buscar episodio por número o título" aria-label="Buscar episodio" />
+                            <button type="button" class="btn btn-secondary" data-focusable="true" data-action="episode-order">Desde el episodio 1</button>
+                        </div>
+                        <p id="episode-count" class="page-subtitle"></p>
+                        <div id="detail-episode-list" class="episode-grid"></div>
                     </div>
                 </div>
             `;
+            this.renderEpisodeList();
+            observeImages(container);
+        },
+
+        renderEpisodeList: function(query) {
+            const anime = this.detailAnime;
+            const container = document.getElementById('detail-episode-list');
+            if (!anime || !container) return;
+            if (typeof query === 'string') this.episodeQuery = query;
+            const filter = (this.episodeQuery || '').trim().toLowerCase();
+            const episodes = (anime.episodes || []).slice();
+            if (!this.episodeDescending) episodes.reverse();
+            const numeric = /^\d+(?:[.,]\d+)?$/.test(filter);
+            const matches = episodes.filter(ep => {
+                if (!filter) return true;
+                if (numeric) {
+                    const numbers = String(ep.episode || ep.title || '').match(/\d+(?:[.,]\d+)?/g) || [];
+                    return numbers.some(n => Number(n.replace(',', '.')) === Number(filter.replace(',', '.')));
+                }
+                return `${ep.episode || ''} ${ep.title || ''}`.toLowerCase().indexOf(filter) !== -1;
+            });
+            const count = document.getElementById('episode-count');
+            if (count) count.textContent = `${matches.length} de ${episodes.length} episodios`;
+            container.innerHTML = matches.length ? matches.map(ep => episodeCard({
+                url: ep.url, title: ep.title, animeTitle: anime.title, episode: ep.episode,
+                animeUrl: anime.url, image: ep.image || anime.backdrop || anime.poster
+            }, { cardTitle: ep.episode || ep.title, cardSub: ep.title !== ep.episode ? ep.title : '' })).join('')
+                : '<p class="empty-msg">No hay episodios que coincidan.</p>';
+            observeImages(container);
+        },
+
+        renderHistory: function() {
+            const container = document.getElementById('history-content');
+            if (!container) return;
+            const history = window.TVStorage.getHistory();
+            container.innerHTML = history.length ? history.map(item => `
+                <div class="history-item" data-history-url="${esc(item.url)}">
+                    ${episodeCard({ url: item.url, title: item.title, animeTitle: item.title, episode: item.episode, animeUrl: item.animeUrl, image: item.image })}
+                    <button type="button" class="btn btn-secondary" data-focusable="true" data-action="remove-history" data-url="${esc(item.url)}">Quitar del historial</button>
+                </div>`).join('') : '<p class="empty-msg">Tu historial está vacío.</p>';
             observeImages(container);
         },
 
@@ -527,8 +569,9 @@
             if (!episodes.length) return null;
             let lastWatchedIdx = -1;
             for (let i = 0; i < episodes.length; i++) {
-                const percent = progressPercent(episodes[i].url);
-                if (percent > 0 && percent < 90 && !isWatched(episodes[i].url)) {
+                const progress = window.TVStorage ? window.TVStorage.getProgress(episodes[i].url) : null;
+                const percent = progress && progress.duration ? progress.time / progress.duration * 100 : 0;
+                if (percent > 0 && percent < 95 && !isWatched(episodes[i].url)) {
                     return { episode: episodes[i], label: `Continuar ${episodes[i].episode || ''}`.trim() };
                 }
                 if (isWatched(episodes[i].url)) lastWatchedIdx = i;
@@ -576,6 +619,48 @@
         /**
          * 5. MI LISTA
          */
+        refreshPersonalized: function(myList) {
+            const active = (window.appNavigation && window.appNavigation.currentFocus) || document.activeElement;
+            const url = active && active.dataset ? active.dataset.url : '';
+            let replaced = false, scope = null;
+            if (myList) {
+                scope = document.getElementById('mylist-content');
+                replaced = !!(active && scope.contains(active));
+                const html = window.TVStorage.getFavorites().length ? `<div class="poster-grid">${favoritePosters()}</div>` : '<p class="empty-msg">Tu lista está vacía.</p>';
+                if (scope.innerHTML !== html) scope.innerHTML = html;
+                else replaced = false;
+                observeImages(scope);
+            } else {
+                const rows = [
+                    ['home-continue-row', 'Continuar viendo', continueCards()],
+                    ['home-followed-row', 'Nuevos episodios de Mi lista', followedCards()],
+                    ['home-mylist-row', 'Mi lista', favoritePosters()]
+                ];
+                rows.forEach(item => {
+                    const target = document.getElementById(item[0]);
+                    if (!target) return;
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = row(item[1], item[2], item[0]);
+                    const content = wrapper.firstElementChild;
+                    if (target.innerHTML === content.innerHTML && target.hidden === content.hidden) return;
+                    if (active && target.contains(active)) { replaced = true; scope = target; }
+                    const track = target.querySelector('[data-row-track]');
+                    const transform = track ? track.style.transform : '';
+                    const viewport = target.querySelector('.row-viewport');
+                    const left = viewport ? viewport.scrollLeft : 0;
+                    target.innerHTML = content.innerHTML;
+                    target.hidden = content.hidden;
+                    const nextViewport = target.querySelector('.row-viewport');
+                    if (nextViewport) nextViewport.scrollLeft = left;
+                    const nextTrack = target.querySelector('[data-row-track]');
+                    if (nextTrack) nextTrack.style.transform = transform;
+                    observeImages(target);
+                });
+            }
+            if (!replaced || !scope) return null;
+            return Array.from(scope.querySelectorAll('[data-focusable="true"]')).find(el => el.dataset.url === url) || scope.querySelector('[data-focusable="true"]');
+        },
+
         renderMyList: function() {
             const container = document.getElementById('mylist-content');
             if (!container) return;
@@ -609,7 +694,7 @@
                             <label for="setting-server">Servidor preferido<small>Se usa primero al abrir un episodio</small></label>
                             <select id="setting-server" class="tv-select" data-setting-key="preferredServer">
                                 ${option('auto', 'Automático (OK primero)', settings.preferredServer)}
-                                ${option('ok', 'OK · 1080p sin anuncios', settings.preferredServer)}
+                                ${option('ok', 'OK · video directo', settings.preferredServer)}
                                 ${option('abyss', 'Abyss · 1080p', settings.preferredServer)}
                                 ${option('epsilon', 'Epsilon · 1080p', settings.preferredServer)}
                                 ${option('byse', 'Byse · 720p', settings.preferredServer)}
@@ -649,7 +734,7 @@
                         <ul class="remote-legend">
                             <li><i class="dot red"></i> Rojo: Buscar · <i class="dot green"></i> Verde: Catálogo · <i class="dot yellow"></i> Amarillo: Ajustes</li>
                             <li><i class="dot blue"></i> Azul: marcar episodio visto / no visto</li>
-                            <li>En el video: OK pausa · ◀ ▶ 10 s · ⏪ ⏩ 30 s · Verde salta la intro · ▼ servidores · CH+/CH− episodio</li>
+                            <li>En el video: OK pausa · ◀ ▶ 10 s · ⏪ ⏩ 30 s · Verde avanza 85 s · OK salta la introducción si hay tiempos · ▼ servidores · CH+/CH− episodio</li>
                             <li>El volumen se maneja con los botones del TV</li>
                         </ul>
                     </section>

@@ -152,6 +152,8 @@ function handleProxy(targetUrl, clientReq, clientRes, redirectCount = 0) {
         'Host': parsedTarget.host
     };
 
+    if (clientReq.headers['content-type']) requestHeaders['Content-Type'] = clientReq.headers['content-type'];
+
     // Forward cookies if provided
     if (clientReq.headers['cookie']) {
         requestHeaders['Cookie'] = clientReq.headers['cookie'];

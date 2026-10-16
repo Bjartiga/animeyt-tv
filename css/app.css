@@ -1116,7 +1116,17 @@ button {
 .player-server-list {
     display: flex;
     flex-direction: column;
+    max-height: 560px;
+    overflow-y: auto;
 }
+
+.player-server-list > * { flex-shrink: 0; }
+.server-mode { margin-left: 8px; font-size: 12px; color: var(--text-muted); }
+.episode-tools { display: flex; align-items: center; margin-bottom: 16px; }
+.episode-tools .search-input { width: 580px; margin-right: 18px; }
+.history-list { display: grid; grid-template-columns: repeat(4, 252px); grid-gap: 28px 18px; }
+.history-item .card { width: 100%; margin-bottom: 12px; }
+.history-item .btn { font-size: 15px; padding: 10px 12px; }
 
 .panel-heading {
     font-size: 13px;
@@ -1354,3 +1364,35 @@ button {
 .card-rank.has-focus .rank-number {
     -webkit-text-stroke-color: #fff;
 }
+
+/* El iframe recibe el mando solo durante una ventana recuperable de interacción. */
+.player-web-controls {
+    position: absolute;
+    left: 32px;
+    right: 32px;
+    bottom: 28px;
+    z-index: 22;
+    background: rgba(12, 12, 18, 0.96);
+    padding: 16px 20px;
+    border-radius: 8px;
+}
+.player-web-controls p { margin: 0 0 12px; font-size: 17px; }
+.player-web-actions { display: flex; }
+.player-web-actions .btn { font-size: 15px; padding: 12px; margin-right: 12px; }
+.player-web-controls.is-interacting .player-web-actions { display: none; }
+.player-web-controls.is-interacting { opacity: 0.85; }
+
+.player-skip {
+    position: absolute;
+    right: 48px;
+    bottom: 160px;
+    z-index: 25;
+    padding: 14px 22px;
+    border: 2px solid #fff;
+    border-radius: 6px;
+    background: rgba(15, 15, 15, .94);
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+}
+.player-skip[hidden] { display: none; }

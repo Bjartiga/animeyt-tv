@@ -83,6 +83,15 @@
                 this.onFocusChange(element);
             }
 
+            const panelScroller = element.closest('[data-player-scroll]');
+            if (panelScroller) {
+                const top = element.offsetTop - panelScroller.offsetTop;
+                const bottom = top + element.offsetHeight;
+                if (top < panelScroller.scrollTop) panelScroller.scrollTop = top;
+                else if (bottom > panelScroller.scrollTop + panelScroller.clientHeight) panelScroller.scrollTop = bottom - panelScroller.clientHeight;
+                return;
+            }
+
             // Dentro del reproductor nunca se desplaza la pantalla (el panel de servidores ya está a la vista)
             if (scroll && !element.closest('[data-nav-noscroll]') && !this._scrollRow(element)) {
                 this.currentFocus.scrollIntoView({
