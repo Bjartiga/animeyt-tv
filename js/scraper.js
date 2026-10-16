@@ -166,7 +166,14 @@
     async function resolveOkRu(embedUrl) {
         const doc = await fetchCleanHTML(embedUrl);
         const holder = doc.querySelector('[data-options]');
-        if (!holder) throw new Error('ok.ru: no se encontró la metadata del video');
+        if (!holder) {
+            // ok.ru reemplaza el reproductor por un aviso cuando el video ya no existe o está bloqueado
+            const text = doc.body ? doc.body.textContent : '';
+            if (/не найдено|заблокирован|удален|not found|blocked/i.test(text)) {
+                throw new Error('OK: el video fue eliminado o bloqueado en ok.ru');
+            }
+            throw new Error('ok.ru: no se encontró la metadata del video');
+        }
 
         const options = JSON.parse(holder.getAttribute('data-options'));
         let metadata = options.flashvars && options.flashvars.metadata;
