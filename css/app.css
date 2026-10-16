@@ -1396,3 +1396,34 @@ button {
     font-weight: 700;
 }
 .player-skip[hidden] { display: none; }
+
+/* ---------- Capas sobre el video (Samsung) ----------
+ * En el TV el video va en un plano de hardware. Lo que se CREA durante la reproducción
+ * (display: none -> block) queda debajo del video y no se ve; lo que ya existía (el OSD) sí.
+ * Por eso todo lo que va sobre el video está siempre en el layout, en su propia capa,
+ * y se muestra/oculta solo con visibility y opacity, igual que el OSD.
+ */
+.player-server-bar,
+.player-next,
+.player-buffering,
+.player-skip,
+.player-web-controls {
+    transform: translateZ(0);
+    will-change: opacity;
+}
+
+.player-server-bar { display: block; visibility: hidden; opacity: 0; }
+.player-server-bar.is-visible { visibility: visible; opacity: 1; }
+
+.player-next { display: flex; visibility: hidden; opacity: 0; }
+.player-next.is-visible { visibility: visible; opacity: 1; }
+
+.player-buffering { display: block; visibility: hidden; opacity: 0; }
+.player-buffering.is-visible { visibility: visible; opacity: 1; }
+.player-buffering:not(.is-visible) .spinner { animation-play-state: paused; }
+
+.player-skip,
+.player-skip[hidden] { display: block; }
+.player-skip[hidden] { visibility: hidden; opacity: 0; }
+
+#player-web-controls.hidden { display: block !important; visibility: hidden; opacity: 0; }

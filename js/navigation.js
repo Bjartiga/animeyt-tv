@@ -58,7 +58,9 @@
                 // Descartar elementos dentro de vistas ocultas
                 if (el.closest('.view.hidden') || el.closest('[hidden]')) return false;
                 const rect = el.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none';
+                // visibility: las capas del reproductor se ocultan así (no con display) para el plano de video del TV
+                const style = window.getComputedStyle(el);
+                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
             });
         }
 

@@ -5,7 +5,7 @@
 (function(window) {
     'use strict';
 
-    const APP_VERSION = '1.9.0';
+    const APP_VERSION = '1.9.1';
 
     // Fila de Inicio: posición vertical donde queda la fila enfocada (debajo del billboard compacto)
     const HOME_ROW_ANCHOR = 300;

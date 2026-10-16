@@ -1042,6 +1042,16 @@
             if (main) main.scrollTop = 0;
             if (this.serverBar) {
                 this.serverBar.classList.toggle('is-visible', this.isServerBarVisible);
+                if (this.isServerBarVisible && window.__TV_DEV_LOGS__) {
+                    // Diagnóstico en el TV: ¿el panel está realmente arriba en pantalla?
+                    setTimeout(() => {
+                        const bar = this.serverBar;
+                        const style = getComputedStyle(bar);
+                        const rect = bar.getBoundingClientRect();
+                        const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + 120);
+                        this._debug(`panel visible=${style.visibility} opacidad=${style.opacity} rect=${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)}x${Math.round(rect.height)} encima=${top ? (top.id || top.className || top.tagName) : 'nada'}`);
+                    }, 300);
+                }
                 const nav = window.appNavigation;
                 if (this.isServerBarVisible && nav) {
                     // Enfocar el botón del servidor activo
