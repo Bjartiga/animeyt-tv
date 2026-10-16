@@ -401,7 +401,6 @@ button {
     transform: scale(1.08);
     border-color: var(--focus);
     z-index: 5;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
 }
 
 .card-thumb {
@@ -530,30 +529,95 @@ button {
     margin-right: 0;
 }
 
-/* ---------- Búsqueda ---------- */
-.search-bar {
+/* ---------- Búsqueda (teclado propio) ---------- */
+.search-layout {
+    display: flex;
+}
+
+.search-left {
+    width: 402px;
+    flex: 0 0 auto;
+    margin-right: 40px;
+}
+
+.search-right {
+    flex: 1;
+}
+
+.search-right .page-subtitle {
+    margin-top: 0;
+}
+
+.search-query {
+    height: 56px;
+    padding: 0 18px;
+    margin-bottom: 16px;
+    border-radius: var(--radius);
+    background: var(--bg-elevated);
+    font-size: 26px;
+    font-weight: 700;
     display: flex;
     align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
-.search-input {
-    flex: 1;
-    height: 56px;
-    padding: 0 22px;
-    margin-right: 14px;
+.search-caret {
+    display: inline-block;
+    width: 3px;
+    height: 30px;
+    margin-left: 2px;
+    background: var(--accent);
+    animation: caret 1s steps(1) infinite;
+}
+
+@keyframes caret {
+    50% { opacity: 0; }
+}
+
+.search-keyboard {
+    display: grid;
+    grid-template-columns: repeat(6, 62px);
+    grid-gap: 6px;
+}
+
+.kbd-key {
+    height: 50px;
     border-radius: var(--radius);
-    border: 3px solid transparent;
     background: var(--bg-elevated);
-    color: var(--text);
-    font-size: 22px;
+    font-size: 21px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border: 2px solid transparent;
 }
 
-.search-input.has-focus,
-.search-input:focus {
-    border-color: #fff;
-    outline: none;
+.kbd-key.kbd-wide {
+    grid-column: span 2;
+    font-size: 15px;
+    text-transform: none;
 }
 
+.kbd-key.has-focus {
+    background: #fff;
+    color: #000;
+    transform: scale(1.08);
+}
+
+.poster-grid.poster-grid-compact {
+    grid-template-columns: repeat(4, 168px);
+    grid-gap: 20px 16px;
+}
+
+.poster-grid-compact .card {
+    width: 168px;
+}
+
+.poster-grid-compact .card-title {
+    font-size: 15px;
+}
+
+/* ---------- Búsqueda ---------- */
 /* ---------- Catálogo ---------- */
 .filter-bar {
     display: flex;
@@ -1023,13 +1087,15 @@ button {
 
 .player-server-bar {
     position: absolute;
-    left: 0;
+    top: 0;
     right: 0;
     bottom: 0;
+    width: 400px;
     z-index: 30;
-    padding: 22px 48px 34px;
-    background: rgba(10, 10, 14, 0.96);
+    padding: 40px 28px 28px;
+    background: linear-gradient(90deg, rgba(10, 10, 14, 0.88) 0%, rgba(10, 10, 14, 0.98) 18%);
     display: none; /* sin animación: deslizarse desde fuera de pantalla provocaba scroll en el TV */
+    overflow: hidden;
 }
 
 .player-server-bar.is-visible {
@@ -1037,48 +1103,74 @@ button {
 }
 
 .server-bar-title {
-    font-size: 18px;
-    font-weight: 800;
-    margin-bottom: 14px;
+    font-size: 26px;
+    font-weight: 900;
 }
 
-.server-bar-title span {
+.server-bar-hint {
     font-size: 13px;
-    font-weight: 600;
     color: var(--text-muted);
-    margin-left: 12px;
+    margin: 4px 0 18px;
 }
 
 .player-server-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
 }
 
-.player-server-btn {
+.panel-heading {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 14px 0 8px;
+}
+
+.player-server-btn,
+.player-action-btn {
     display: flex;
     align-items: center;
-    padding: 10px 18px;
-    margin: 0 12px 10px 0;
+    width: 100%;
+    padding: 10px 14px;
+    margin-bottom: 6px;
     border-radius: var(--radius);
-    background: var(--bg-card);
+    background: transparent;
     border: 2px solid transparent;
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 700;
+    text-align: left;
+    color: var(--text-dim);
 }
 
-.player-server-btn .server-num {
-    color: var(--text-muted);
-    margin-right: 8px;
+.player-server-btn .server-name {
+    flex: 1;
+}
+
+.server-now {
+    display: none;
+    margin-left: 10px;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--accent);
 }
 
 .player-server-btn.is-active {
-    border-color: var(--accent);
+    color: #fff;
 }
 
-.player-server-btn.has-focus {
+.player-server-btn.is-active .server-now {
+    display: inline;
+}
+
+.player-server-btn.has-focus,
+.player-action-btn.has-focus {
     background: #fff;
     color: #000;
-    transform: scale(1.05);
+}
+
+.player-action-btn .dot {
+    margin-right: 8px;
 }
 
 #player-focus-sink {
@@ -1172,37 +1264,93 @@ button {
     opacity: 0;
 }
 
-/* Acciones de la serie dentro del panel del reproductor */
-.player-action-btn {
-    display: flex;
-    align-items: center;
-    padding: 10px 18px;
-    margin: 0 12px 10px 0;
-    border-radius: var(--radius);
-    background: rgba(255, 255, 255, 0.12);
-    border: 2px solid transparent;
-    font-size: 16px;
-    font-weight: 700;
-}
-
-.player-action-btn .dot {
-    margin-right: 8px;
-}
-
-.player-action-btn.has-focus {
-    background: #fff;
-    color: #000;
-    transform: scale(1.05);
-}
-
-.player-bar-divider {
-    width: 2px;
-    height: 30px;
-    margin: 6px 18px 0 6px;
-    background: rgba(255, 255, 255, 0.2);
-}
-
 .card-badge-new {
     background: var(--accent);
     color: #fff;
+}
+
+/* ---------- Ranking ---------- */
+.ranking-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.ranking-head .page-title {
+    margin-bottom: 0;
+}
+
+.ranking-periods {
+    display: flex;
+}
+
+#view-ranking .row {
+    margin-left: -48px;
+    margin-right: -48px;
+}
+
+.row-title small {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-left: 10px;
+}
+
+.card-rank {
+    width: 236px;
+    height: 254px;
+    background: transparent;
+    overflow: visible;
+}
+
+.rank-number {
+    position: absolute;
+    left: -6px;
+    bottom: 34px;
+    font-size: 150px;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--bg);
+    -webkit-text-stroke: 3px rgba(255, 255, 255, 0.55);
+    letter-spacing: -10px;
+    z-index: 0;
+}
+
+.rank-poster {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 150px;
+    height: 213px;
+    border-radius: var(--radius);
+    background: #111 center / cover no-repeat;
+    z-index: 1;
+}
+
+.rank-info {
+    position: absolute;
+    left: 86px;
+    right: 0;
+    bottom: 0;
+    display: block;
+    padding: 4px 4px 0;
+}
+
+.rank-info .card-title,
+.rank-info .card-sub {
+    display: block;
+}
+
+.card-rank.has-focus {
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.card-rank.has-focus .rank-poster {
+    box-shadow: 0 0 0 3px #fff;
+}
+
+.card-rank.has-focus .rank-number {
+    -webkit-text-stroke-color: #fff;
 }

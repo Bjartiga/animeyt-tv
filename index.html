@@ -30,6 +30,7 @@
             <button type="button" class="header-nav-btn is-active" data-focusable="true" data-action="nav" data-view="home">Inicio</button>
             <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="search">Buscar <i class="dot red"></i></button>
             <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="catalog">Catálogo <i class="dot green"></i></button>
+            <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="ranking">Ranking</button>
             <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="mylist">Mi lista</button>
             <button type="button" class="header-nav-btn" data-focusable="true" data-action="nav" data-view="settings">Ajustes <i class="dot yellow"></i></button>
         </nav>
@@ -44,12 +45,17 @@
 
         <!-- 2. Búsqueda -->
         <section id="view-search" class="view view-page hidden">
-            <div class="search-bar">
-                <input type="search" id="search-input" class="search-input" placeholder="Buscar anime por nombre..." autocomplete="off" data-focusable="true" />
-                <button type="button" id="search-submit-btn" class="btn btn-primary" data-focusable="true">Buscar</button>
+            <!-- Teclado propio (estilo Netflix): no se abre el teclado del TV -->
+            <div class="search-layout">
+                <div class="search-left">
+                    <div class="search-query"><span id="search-query-text"></span><span class="search-caret"></span></div>
+                    <div id="search-keyboard" class="search-keyboard"></div>
+                </div>
+                <div class="search-right">
+                    <h2 id="search-results-count" class="page-subtitle">Escribe el nombre de un anime</h2>
+                    <div id="search-results-grid" class="poster-grid poster-grid-compact"></div>
+                </div>
             </div>
-            <h2 id="search-results-count" class="page-subtitle">Escribe al menos 3 letras</h2>
-            <div id="search-results-grid" class="poster-grid"></div>
         </section>
 
         <!-- 3. Catálogo con filtros (los filtros se cargan desde el sitio) -->
@@ -62,6 +68,15 @@
         <!-- 4. Ficha del anime -->
         <section id="view-anime" class="view hidden">
             <div id="anime-detail-content"></div>
+        </section>
+
+        <!-- Ranking (Top 10 del sitio) -->
+        <section id="view-ranking" class="view view-page hidden">
+            <div class="ranking-head">
+                <h1 class="page-title">Ranking</h1>
+                <div id="ranking-periods" class="ranking-periods"></div>
+            </div>
+            <div id="ranking-content"></div>
         </section>
 
         <!-- 5. Mi lista -->
@@ -114,7 +129,8 @@
 
             <!-- Panel de servidores (▼ o amarillo para abrir, ▲ o ↩ para cerrar) -->
             <div id="player-server-bar" class="player-server-bar" data-nav-scope>
-                <div class="server-bar-title">Opciones <span>▲ o ↩ para cerrar</span></div>
+                <div class="server-bar-title">Opciones</div>
+                <div class="server-bar-hint">▲▼ moverse · OK elegir · ◀ o ↩ cerrar</div>
                 <div id="player-server-list" class="player-server-list"></div>
             </div>
 

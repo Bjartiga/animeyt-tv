@@ -115,6 +115,9 @@
                 const anchor = parseInt(scroller.dataset.navAnchor || '0', 10);
                 const y = Math.max(0, row.offsetTop - anchor);
                 scroller.firstElementChild.style.transform = `translateY(${-y}px)`;
+            } else {
+                // Filas fuera de Inicio (p. ej. Ranking): desplazar la página para ver la fila completa
+                row.scrollIntoView({ behavior: 'auto', block: 'center' });
             }
             return true;
         }
@@ -333,6 +336,9 @@
                 }
                 return;
             }
+
+            // Dirección en la que no hubo a dónde moverse (el reproductor la usa para cerrar su panel)
+            this.lastBlocked = next ? null : ({ 38: 'UP', 40: 'DOWN', 37: 'LEFT', 39: 'RIGHT' })[code] || null;
 
             if (next) {
                 this.setFocus(next);

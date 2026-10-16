@@ -14,6 +14,8 @@
             this.catalogPage = 1;
             this.catalogHasNext = false;
             this.searchDebounceTimer = null;
+            this.searchQuery = '';
+            this.searchSeq = 0;
         }
 
         async init() {
@@ -258,6 +260,9 @@
                 case '/mylist':
                     this._loadMyListView();
                     break;
+                case '/ranking':
+                    await this._loadRankingView(parsed.params);
+                    break;
                 default:
                     await this._loadHomeView();
                     break;
@@ -284,8 +289,12 @@
             window.TVUI.switchView('home');
             window.TVUI.showLoading(true, 'Cargando estrenos de AnimeYT...');
             try {
-                const data = await window.TVScraper.getHomeContent();
-                window.TVUI.renderHome(data);
+                // Ranking en paralelo para la fila "Top 10"; si falla, Inicio se muestra igual
+                const [data, ranking] = await Promise.all([
+                    window.TVScraper.getHomeContent(),
+                    window.TVScraper.getRanking('7d').catch(() => [])
+                ]);
+                window.TVUI.renderHome(data, ranking);
                 this.nav.refreshFocus('.billboard-actions [data-focusable="true"]');
             } catch (err) {
                 window.TVUI.showToast(`Error cargando estrenos: ${err && err.message ? err.message : err}`);
@@ -299,27 +308,63 @@
          */
         async _loadSearchView(params) {
             window.TVUI.switchView('search');
-            const input = document.getElementById('search-input');
+            window.TVUI.renderKeyboard();
 
-            if (params.q && input) {
-                input.value = params.q;
-                await this._executeSearch(params.q);
+            if (params.q && params.q !== this.searchQuery) {
+                this.searchQuery = params.q;
+                window.TVUI.setSearchQuery(this.searchQuery);
+                await this._executeSearch(this.searchQuery);
             } else {
-                this.nav.refreshFocus('#search-input');
+                window.TVUI.setSearchQuery(this.searchQuery);
             }
+            // Al volver desde una ficha, el foco queda en los resultados; si no, en la "a"
+            this.nav.refreshFocus(this.searchQuery && document.querySelector('#search-results-grid [data-focusable="true"]')
+                ? '#search-results-grid [data-focusable="true"]'
+                : '#search-keyboard [data-key="a"]');
+        }
+
+        /**
+         * Tecla del teclado propio: actualiza la consulta y busca al dejar de escribir (sin mover el foco)
+         */
+        _onKeyboardKey(key) {
+            if (key === 'space') {
+                if (this.searchQuery && !/\s$/.test(this.searchQuery)) this.searchQuery += ' ';
+            } else if (key === 'back') {
+                this.searchQuery = this.searchQuery.slice(0, -1);
+            } else if (key === 'clear') {
+                this.searchQuery = '';
+            } else if (this.searchQuery.length < 40) {
+                this.searchQuery += key;
+            }
+            window.TVUI.setSearchQuery(this.searchQuery);
+
+            clearTimeout(this.searchDebounceTimer);
+            const query = this.searchQuery.trim();
+            if (query.length < 2) {
+                window.TVUI.setSearchStatus(query ? 'Sigue escribiendo...' : 'Escribe el nombre de un anime');
+                if (!query) window.TVUI.renderSearchResults([], '');
+                return;
+            }
+            window.TVUI.setSearchStatus(`Buscando "${query}"...`);
+            this.searchDebounceTimer = setTimeout(() => this._executeSearch(query), 600);
         }
 
         async _executeSearch(query) {
             if (!query || !query.trim()) return;
-            window.TVUI.showLoading(true, `Buscando "${query}"...`);
+            const seq = ++this.searchSeq;
             try {
                 const results = await window.TVApi.search(query);
+                if (seq !== this.searchSeq) return; // llegó una búsqueda más nueva
                 window.TVUI.renderSearchResults(results, query);
-                this.nav.refreshFocus('#search-results-grid [data-focusable="true"]');
+                // Guardar la consulta en la ruta (sin recargar) para que Atrás desde una ficha la recupere
+                const route = `#/search?q=${encodeURIComponent(query)}`;
+                if (this.currentRoute.indexOf('#/search') === 0 && this.currentRoute !== route) {
+                    history.replaceState(null, '', route);
+                    this.currentRoute = route;
+                    this.viewStack[this.viewStack.length - 1] = route;
+                }
             } catch (err) {
                 window.TVUI.showToast(`Error en la búsqueda: ${err && err.message ? err.message : err}`);
-            } finally {
-                window.TVUI.showLoading(false);
             }
         }
 
@@ -400,6 +445,22 @@
             this.nav.refreshFocus('#settings-content [data-focusable="true"]');
         }
 
+        async _loadRankingView(params) {
+            window.TVUI.switchView('ranking');
+            const periodo = params.periodo || '7d';
+            window.TVUI.showLoading(true, 'Cargando ranking...');
+            try {
+                const blocks = await window.TVScraper.getRanking(periodo);
+                window.TVUI.renderRanking(blocks, periodo);
+                this.nav.refreshFocus('#ranking-content [data-focusable="true"]');
+                window.TVUI.switchView('ranking'); // volver arriba tras renderizar
+            } catch (err) {
+                window.TVUI.showToast(`Error cargando ranking: ${err && err.message ? err.message : err}`);
+            } finally {
+                window.TVUI.showLoading(false);
+            }
+        }
+
         _loadMyListView() {
             window.TVUI.switchView('mylist');
             window.TVUI.renderMyList();
@@ -433,6 +494,11 @@
                             img: target.dataset.img || ''
                         }));
                     }
+                } else if (action === 'kbd') {
+                    this._onKeyboardKey(target.dataset.key);
+                } else if (action === 'ranking-period') {
+                    // Reemplaza en la pila: cambiar de periodo no debe acumular "Atrás"
+                    this.navigate(`#/ranking?periodo=${encodeURIComponent(target.dataset.period)}`, true);
                 } else if (action === 'toggle-favorite') {
                     const added = window.TVStorage.toggleFavorite({
                         url: target.dataset.url,
@@ -464,41 +530,6 @@
                     }
                 }
             });
-
-            // Manejo del input de búsqueda con debounce y teclado virtual
-            const searchInput = document.getElementById('search-input');
-            const searchBtn = document.getElementById('search-submit-btn');
-
-            if (searchInput) {
-                // Al escribir o presionar Enter
-                searchInput.addEventListener('keydown', (e) => {
-                    if (e.keyCode === 13) {
-                        e.preventDefault();
-                        const query = searchInput.value.trim();
-                        if (query) {
-                            searchInput.blur();
-                            this._executeSearch(query);
-                        }
-                    }
-                });
-
-                searchInput.addEventListener('input', () => {
-                    clearTimeout(this.searchDebounceTimer);
-                    const q = searchInput.value.trim();
-                    if (q.length >= 3) {
-                        this.searchDebounceTimer = setTimeout(() => {
-                            this._executeSearch(q);
-                        }, 500);
-                    }
-                });
-            }
-
-            if (searchBtn && searchInput) {
-                searchBtn.addEventListener('click', () => {
-                    const q = searchInput.value.trim();
-                    if (q) this._executeSearch(q);
-                });
-            }
 
             // Filtros de catálogo
             const filterForm = document.getElementById('catalog-filters-form');

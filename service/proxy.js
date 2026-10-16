@@ -78,7 +78,7 @@ function sendError(res, status, message) {
     res.end(message);
 }
 
-function handleProxy(targetUrl, clientReq, clientRes, redirectCount, cacheKey) {
+function handleProxy(targetUrl, clientReq, clientRes, redirectCount, cacheKey, raw) {
     if (redirectCount > 5) {
         sendError(clientRes, 502, 'Demasiadas redirecciones');
         return;
@@ -111,7 +111,7 @@ function handleProxy(targetUrl, clientReq, clientRes, redirectCount, cacheKey) {
         var status = proxyRes.statusCode;
         if ((status === 301 || status === 302 || status === 303 || status === 307 || status === 308) && proxyRes.headers.location) {
             proxyRes.resume();
-            handleProxy(urlModule.resolve(targetUrl, proxyRes.headers.location), clientReq, clientRes, redirectCount + 1, cacheKey);
+            handleProxy(urlModule.resolve(targetUrl, proxyRes.headers.location), clientReq, clientRes, redirectCount + 1, cacheKey, raw);
             return;
         }
 
@@ -129,7 +129,7 @@ function handleProxy(targetUrl, clientReq, clientRes, redirectCount, cacheKey) {
         stream.on('end', function() {
             var contentType = proxyRes.headers['content-type'] || 'application/octet-stream';
             var body = Buffer.concat(chunks);
-            if (/text\/html/i.test(contentType)) {
+            if (/text\/html/i.test(contentType) && !raw) {
                 body = new Buffer(stripHtml(body.toString('utf8')), 'utf8');
             }
             var entry = { status: status, contentType: contentType, body: body };
@@ -170,12 +170,15 @@ var server = http.createServer(function(req, res) {
 
     if (parsed.pathname === '/proxy' && parsed.query.url) {
         var target = String(parsed.query.url);
-        var cached = cacheGet(target);
+        // raw=1: devolver el HTML con sus <script> (la app lee datos de ellos)
+        var raw = parsed.query.raw === '1';
+        var key = raw ? target + '#raw' : target;
+        var cached = cacheGet(key);
         if (cached) {
             sendEntry(res, cached);
             return;
         }
-        handleProxy(target, req, res, 0, target);
+        handleProxy(target, req, res, 0, key, raw);
         return;
     }
 

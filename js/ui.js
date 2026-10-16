@@ -5,7 +5,7 @@
 (function(window) {
     'use strict';
 
-    const APP_VERSION = '1.5.0';
+    const APP_VERSION = '1.6.0';
 
     // Fila de Inicio: posición vertical donde queda la fila enfocada (debajo del billboard compacto)
     const HOME_ROW_ANCHOR = 300;
@@ -46,7 +46,7 @@
                 data-anime-url="${esc(ep.animeUrl || '')}" data-img="${esc(ep.image || '')}"
                 data-bb-title="${esc(ep.animeTitle || ep.title)}" data-bb-meta="${esc(options.meta || ep.episode || '')}"
                 data-bb-desc="${esc(options.desc || '')}" data-bb-image="${esc(ep.image || '')}" data-bb-kicker="${esc(options.kicker || 'Episodio')}">
-                <div class="card-thumb" style="background-image: ${cssUrl(ep.image)}">
+                <div class="card-thumb" data-bg="${esc(ep.image || '')}">
                     ${ep.episode ? `<span class="card-badge">${esc(ep.episode)}</span>` : ''}
                     ${watched ? '<span class="card-watched">✓ VISTO</span>' : ''}
                     ${percent > 0 && percent < 100 ? `<div class="card-progress"><div class="card-progress-fill" style="width: ${percent}%"></div></div>` : ''}
@@ -71,7 +71,7 @@
             <button type="button" class="card card-poster" data-focusable="true" data-action="open-anime"
                 data-url="${esc(anime.url)}"
                 data-bb-title="${esc(anime.title)}" data-bb-meta="${esc(sub)}" data-bb-image="${esc(anime.image || '')}" data-bb-kicker="Anime">
-                <div class="card-thumb" style="background-image: ${cssUrl(anime.image)}">${badge}</div>
+                <div class="card-thumb" data-bg="${esc(anime.image || '')}">${badge}</div>
                 <div class="card-body">
                     <div class="card-title">${esc(anime.title)}</div>
                     <div class="card-sub">${esc(sub)}</div>
@@ -96,6 +96,20 @@
         }).join('');
     }
 
+    function rankCard(e) {
+        return `
+            <button type="button" class="card card-rank" data-focusable="true" data-action="open-anime" data-url="${esc(e.url)}"
+                data-bb-kicker="Top 10" data-bb-title="${esc(e.title)}" data-bb-meta="${esc([e.season, e.metric].filter(Boolean).join(' · '))}" data-bb-image="${esc(e.image || '')}">
+                <span class="rank-number">${e.rank}</span>
+                <span class="rank-poster" data-bg="${esc(e.image || '')}"></span>
+                <span class="rank-info">
+                    <span class="card-title">${esc(e.title)}</span>
+                    <span class="card-sub">${esc([e.season, e.metric].filter(Boolean).join(' · '))}</span>
+                </span>
+            </button>
+        `;
+    }
+
     function row(title, cardsHtml) {
         if (!cardsHtml) return '';
         return `
@@ -106,6 +120,30 @@
                 </div>
             </section>
         `;
+    }
+
+    /**
+     * Imágenes diferidas: cada tarjeta pide su imagen solo al acercarse a la pantalla
+     * (Inicio tiene ~40 y una ficha puede tener 100+ episodios: cargarlas todas juntas traba el TV)
+     */
+    const imageObserver = ('IntersectionObserver' in window)
+        ? new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (!entry.isIntersecting) return;
+                const el = entry.target;
+                el.style.backgroundImage = cssUrl(el.getAttribute('data-bg'));
+                imageObserver.unobserve(el);
+            });
+        }, { rootMargin: '300px' })
+        : null;
+
+    function observeImages(root) {
+        (root || document).querySelectorAll('[data-bg]:not([data-bg-ready])').forEach(function(el) {
+            el.setAttribute('data-bg-ready', '1');
+            if (!el.getAttribute('data-bg')) return;
+            if (imageObserver) imageObserver.observe(el);
+            else el.style.backgroundImage = cssUrl(el.getAttribute('data-bg'));
+        });
     }
 
     const TVUI = {
@@ -121,6 +159,7 @@
                 catalog: document.getElementById('view-catalog'),
                 anime: document.getElementById('view-anime'),
                 mylist: document.getElementById('view-mylist'),
+                ranking: document.getElementById('view-ranking'),
                 watch: document.getElementById('view-watch'),
                 settings: document.getElementById('view-settings')
             };
@@ -202,7 +241,7 @@
         /**
          * 1. INICIO
          */
-        renderHome: function(data) {
+        renderHome: function(data, ranking) {
             const container = document.getElementById('home-content');
             if (!container) return;
 
@@ -281,10 +320,14 @@
             }, { kicker: 'Nuevo episodio' })).join('');
             rows += row('Últimos episodios', latestCards);
 
+            // Top 10 de la semana (lo más visto del ranking; si no está, la primera lista)
+            const top = (ranking || []).find(b => b.id === 'ranking-vistos') || (ranking || [])[0];
+            if (top) rows += row('Top 10 de la semana', top.entries.map(rankCard).join(''));
+
             const featuredCards = heroes.map(h => `
                 <button type="button" class="card card-wide" data-focusable="true" data-action="open-anime" data-url="${esc(h.url)}"
                     data-bb-kicker="Destacado" data-bb-title="${esc(h.title)}" data-bb-desc="${esc(h.description)}" data-bb-image="${esc(h.image)}">
-                    <div class="card-thumb" style="background-image: ${cssUrl(h.image)}"></div>
+                    <div class="card-thumb" data-bg="${esc(h.image || '')}"></div>
                     <div class="card-body"><div class="card-title">${esc(h.title)}</div><div class="card-sub">Destacado de la temporada</div></div>
                 </button>
             `).join('');
@@ -313,6 +356,7 @@
 
             this.views.home.classList.remove('is-browsing');
             this._setBillboard(this.featured);
+            observeImages(container);
         },
 
         /**
@@ -329,6 +373,35 @@
                     : `Sin resultados para "${query || ''}". Prueba con el nombre en romaji o inglés.`;
             }
             container.innerHTML = (results || []).map(posterCard).join('');
+            observeImages(container);
+        },
+
+        /**
+         * Teclado de búsqueda propio: letras, ñ, números y espacio/borrar/limpiar
+         */
+        renderKeyboard: function() {
+            const container = document.getElementById('search-keyboard');
+            if (!container || container.dataset.ready) return;
+            // a-z + 1-0 = 36 teclas: 6 filas exactas de 6 (los títulos van en romaji, no hace falta ñ)
+            const keys = 'abcdefghijklmnopqrstuvwxyz1234567890'.split('');
+            container.innerHTML = keys.map(k =>
+                `<button type="button" class="kbd-key" data-focusable="true" data-action="kbd" data-key="${k}">${k}</button>`
+            ).join('') + `
+                <button type="button" class="kbd-key kbd-wide" data-focusable="true" data-action="kbd" data-key="space">␣ Espacio</button>
+                <button type="button" class="kbd-key kbd-wide" data-focusable="true" data-action="kbd" data-key="back">⌫ Borrar</button>
+                <button type="button" class="kbd-key kbd-wide" data-focusable="true" data-action="kbd" data-key="clear">✕ Limpiar</button>
+            `;
+            container.dataset.ready = '1';
+        },
+
+        setSearchQuery: function(query) {
+            const el = document.getElementById('search-query-text');
+            if (el) el.textContent = query;
+        },
+
+        setSearchStatus: function(text) {
+            const el = document.getElementById('search-results-count');
+            if (el) el.textContent = text;
         },
 
         /**
@@ -374,6 +447,7 @@
             }
 
             container.innerHTML = data.animes.map(posterCard).join('');
+            observeImages(container);
 
             if (paginationEl) {
                 const page = data.currentPage || 1;
@@ -442,6 +516,7 @@
                     </div>
                 </div>
             `;
+            observeImages(container);
         },
 
         /**
@@ -465,6 +540,39 @@
         },
 
         /**
+         * RANKING: una fila por lista, con el puesto grande junto al póster (estilo "Top 10")
+         */
+        renderRanking: function(blocks, periodo) {
+            const periods = document.getElementById('ranking-periods');
+            const container = document.getElementById('ranking-content');
+            if (!container || !periods) return;
+
+            const PERIODS = [['7d', '7 días'], ['30d', '30 días'], ['all', 'Histórico']];
+            periods.innerHTML = PERIODS.map(p => `
+                <button type="button" class="btn ${p[0] === periodo ? 'btn-primary' : 'btn-secondary'}" data-focusable="true"
+                    data-action="ranking-period" data-period="${p[0]}">${p[1]}</button>
+            `).join('');
+
+            if (!blocks || !blocks.length) {
+                container.innerHTML = '<p class="empty-msg">No se pudo cargar el ranking.</p>';
+                return;
+            }
+
+            container.innerHTML = blocks.map(block => {
+                const cards = block.entries.map(rankCard).join('');
+                return `
+                    <section class="row ranking-row" data-nav-row>
+                        <h2 class="row-title">${esc(block.title)} <small>${esc(block.desc)}</small></h2>
+                        <div class="row-viewport">
+                            <div class="row-track" data-row-track>${cards}</div>
+                        </div>
+                    </section>
+                `;
+            }).join('');
+            observeImages(container);
+        },
+
+        /**
          * 5. MI LISTA
          */
         renderMyList: function() {
@@ -474,6 +582,7 @@
             container.innerHTML = favorites.length
                 ? `<div class="poster-grid">${favoritePosters(this.latestEpisodes)}</div>`
                 : '<p class="empty-msg">Tu lista está vacía. Abre un anime y elige “＋ Mi lista”, o pulsa ▼ → “★ Mi lista” mientras ves un episodio.</p>';
+            observeImages(container);
         },
 
         /**

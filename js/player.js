@@ -50,7 +50,7 @@
             // Primero los que se reproducen en el reproductor nativo (OK, Omega/archive.org), luego los web
             const priorityRules = [
                 { pattern: /ok\.ru/i, score: 100 },
-                { pattern: /archive\.org|omega/i, score: 95 },
+                { pattern: /archive\.org|omega|mytsumi\.com\/multiplayer\/play/i, score: 95 },
                 { pattern: /abyss/i, score: 90 },
                 { pattern: /epsilon|rpmvid|ytplay/i, score: 80 },
                 { pattern: /byse/i, score: 70 },
@@ -132,7 +132,7 @@
             try {
                 // 1. Obtener container ID de AnimeYT
                 const containerInfo = await window.TVScraper.getEpisodeContainer(episodeData.url);
-                if (!containerInfo || !containerInfo.containerId) {
+                if (!containerInfo || (!containerInfo.containerId && !containerInfo.multiOptionsUrl)) {
                     throw new Error('No se encontró el reproductor de este episodio');
                 }
 
@@ -140,8 +140,10 @@
                 this.currentEpisode.nextUrl = containerInfo.nextUrl;
                 this.currentEpisode.listUrl = containerInfo.listUrl;
                 // Página de servidores del sitio: la abre "Ver en el navegador del TV"
-                this.currentEpisode.containerUrl = `https://mytsumi.com/container.php?id=${encodeURIComponent(containerInfo.containerId)}` +
-                    `&lang=${encodeURIComponent(containerInfo.lang)}&only=${encodeURIComponent(containerInfo.only)}`;
+                this.currentEpisode.containerUrl = containerInfo.containerId
+                    ? `https://mytsumi.com/container.php?id=${encodeURIComponent(containerInfo.containerId)}` +
+                      `&lang=${encodeURIComponent(containerInfo.lang)}&only=${encodeURIComponent(containerInfo.only)}`
+                    : containerInfo.multiOptionsUrl;
                 if (!this.currentEpisode.animeUrl) this.currentEpisode.animeUrl = containerInfo.listUrl || '';
                 if (!this.currentEpisode.image) this.currentEpisode.image = containerInfo.backdrop || '';
                 if (containerInfo.title) {
@@ -149,12 +151,19 @@
                     if (this.titleEl) this.titleEl.textContent = containerInfo.title;
                 }
 
-                // 2. Extraer servidores limpios desde Mytsumi sin anuncios
-                const { servers } = await window.TVScraper.getVideoServers(
-                    containerInfo.containerId,
-                    containerInfo.lang,
-                    containerInfo.only
-                );
+                // 2. Lista de servidores (formato container.php o el alternativo multiplayer)
+                let servers;
+                if (containerInfo.containerId) {
+                    servers = (await window.TVScraper.getVideoServers(
+                        containerInfo.containerId,
+                        containerInfo.lang,
+                        containerInfo.only
+                    )).servers;
+                } else {
+                    const multi = await window.TVScraper.getMultiServers(containerInfo.multiOptionsUrl);
+                    servers = multi.servers;
+                    this.currentEpisode.containerUrl = multi.containerUrl;
+                }
 
                 if (!servers || !servers.length) {
                     throw new Error('No hay servidores de video disponibles para este capítulo');
@@ -590,60 +599,49 @@
 
         _renderServerBar() {
             if (!this.serverList) return;
+
+            const button = (className, html, onClick) => {
+                const el = document.createElement('button');
+                el.type = 'button';
+                el.className = className;
+                el.setAttribute('data-focusable', 'true');
+                el.innerHTML = html;
+                el.addEventListener('click', onClick);
+                return el;
+            };
+            const heading = (text) => {
+                const el = document.createElement('h3');
+                el.className = 'panel-heading';
+                el.textContent = text;
+                return el;
+            };
+
             this.serverList.innerHTML = '';
 
-            // Acciones de la serie, en la misma fila que los servidores (▲ siempre cierra el panel)
-            const series = this._series();
-            if (series.url) {
-                const favorite = window.TVStorage && window.TVStorage.isFavorite(series.url);
-                const favButton = document.createElement('button');
-                favButton.type = 'button';
-                favButton.className = 'player-action-btn';
-                favButton.setAttribute('data-focusable', 'true');
-                favButton.textContent = favorite ? '✓ En mi lista' : '★ Mi lista';
-                favButton.addEventListener('click', () => this._toggleFavorite(favButton));
-                this.serverList.appendChild(favButton);
-
-                const seriesButton = document.createElement('button');
-                seriesButton.type = 'button';
-                seriesButton.className = 'player-action-btn';
-                seriesButton.setAttribute('data-focusable', 'true');
-                seriesButton.innerHTML = '<i class="dot red"></i> Ir a la serie';
-                seriesButton.addEventListener('click', () => this.openSeries());
-                this.serverList.appendChild(seriesButton);
-
-                const browserButton = document.createElement('button');
-                browserButton.type = 'button';
-                browserButton.className = 'player-action-btn';
-                browserButton.setAttribute('data-focusable', 'true');
-                browserButton.textContent = '🌐 Ver en el navegador del TV';
-                browserButton.addEventListener('click', () => this.openInBrowser());
-                this.serverList.appendChild(browserButton);
-
-                const divider = document.createElement('span');
-                divider.className = 'player-bar-divider';
-                this.serverList.appendChild(divider);
-            }
-
+            // Panel vertical (▲▼ moverse, OK elegir, ◀ o Atrás cerrar): primero los servidores, luego la serie
+            this.serverList.appendChild(heading('Servidor'));
             this.servers.forEach((server, index) => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = `player-server-btn ${index === this.currentServerIndex ? 'is-active' : ''}`;
-                btn.setAttribute('data-focusable', 'true');
-                btn.setAttribute('data-server-index', index);
                 const direct = window.TVScraper.canPlayDirect(server);
-                btn.innerHTML = `
-                    <span class="server-num">${index + 1}</span>
-                    <span class="server-name">${server.label}</span>
-                    ${direct ? '<span class="server-direct">SIN ANUNCIOS</span>' : '<span class="server-web">WEB</span>'}
-                `;
-
-                btn.addEventListener('click', () => {
-                    this.switchServer(index);
-                });
-
+                const btn = button(
+                    `player-server-btn ${index === this.currentServerIndex ? 'is-active' : ''}`,
+                    `<span class="server-name">${server.label}</span>` +
+                    (direct ? '<span class="server-direct">SIN ANUNCIOS</span>' : '<span class="server-web">WEB</span>') +
+                    '<span class="server-now">▶ Reproduciendo</span>',
+                    () => this.switchServer(index)
+                );
+                btn.setAttribute('data-server-index', index);
                 this.serverList.appendChild(btn);
             });
+
+            const series = this._series();
+            this.serverList.appendChild(heading('Serie'));
+            if (series.url) {
+                const favorite = window.TVStorage && window.TVStorage.isFavorite(series.url);
+                const favButton = button('player-action-btn', favorite ? '✓ En mi lista' : '★ Mi lista', () => this._toggleFavorite(favButton));
+                this.serverList.appendChild(favButton);
+                this.serverList.appendChild(button('player-action-btn', '<i class="dot red"></i> Ir a la serie', () => this.openSeries()));
+            }
+            this.serverList.appendChild(button('player-action-btn', '🌐 Ver en el navegador del TV', () => this.openInBrowser()));
         }
 
         _updateServerButtonsState() {
@@ -816,8 +814,9 @@
                 return;
             }
 
-            // Barra de servidores abierta: ▲ la cierra (no hay nada más arriba a donde moverse)
-            if (this.isServerBarVisible && code === K.UP) {
+            // Panel abierto: ◀ lo cierra; ▲ también, pero solo desde el primer elemento (la navegación no pudo subir)
+            if (this.isServerBarVisible && (code === K.LEFT ||
+                (code === K.UP && window.appNavigation && window.appNavigation.lastBlocked === 'UP'))) {
                 e.preventDefault();
                 this.toggleServerBar();
                 return;

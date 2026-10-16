@@ -89,7 +89,26 @@
     /**
      * Realiza un fetch limpio y parsea a Document HTML sin ejecutar scripts
      */
+    // Caché de páginas ya descargadas (volver a Inicio o a una ficha es instantáneo)
+    const PAGE_CACHE_TTL = 3 * 60 * 1000;
+    const PAGE_CACHE_MAX = 25;
+    const pageCache = new Map();
+
+    // Lo que la app no usa (scripts, estilos, SVG, comentarios): quitarlo antes de parsear ahorra CPU del TV
+    function slimHtml(html) {
+        return html
+            .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+            .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+            .replace(/<svg\b[\s\S]*?<\/svg>/gi, '')
+            .replace(/<!--[\s\S]*?-->/g, '');
+    }
+
     async function fetchCleanHTML(url) {
+        const cached = pageCache.get(url);
+        if (cached && Date.now() - cached.time < PAGE_CACHE_TTL) {
+            return new DOMParser().parseFromString(cached.html, 'text/html');
+        }
+
         // El CPU del TV es lento: timeout amplio y un reintento ante fallos de red o timeout
         const MAX_ATTEMPTS = 2;
         let lastError = null;
@@ -116,8 +135,10 @@
                     throw httpError;
                 }
 
-                const html = await response.text();
+                const html = slimHtml(await response.text());
                 clearTimeout(timeoutId);
+                if (pageCache.size >= PAGE_CACHE_MAX) pageCache.delete(pageCache.keys().next().value);
+                pageCache.set(url, { time: Date.now(), html: html });
                 return new DOMParser().parseFromString(html, 'text/html');
             } catch (err) {
                 clearTimeout(timeoutId);
@@ -236,7 +257,121 @@
         return null;
     }
 
+    /**
+     * Texto crudo de una página (los <script> traen datos: lista de servidores, calidades)
+     */
+    async function fetchRawText(url) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        try {
+            const base = window.TVNet.url(url);
+            // El proxy de TizenBrew quita los <script> del HTML: pedirle el texto sin tocar
+            const target = base !== url ? base + '&raw=1' : base;
+            const response = await fetch(target, { credentials: window.TVNet.credentials(), signal: controller.signal });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.text();
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    /**
+     * Servidores del formato multiplayer: options.php (botón ▶ con la URL real en base64) -> contenedor.php
+     * con la lista en "const videoTabs = [...]"
+     */
+    async function getMultiServers(optionsUrl) {
+        const options = await fetchRawText(optionsUrl);
+        const encoded = /azakuEncodedURL\s*=\s*["']([A-Za-z0-9+/=]+)["']/.exec(options);
+        const containerUrl = encoded ? atob(encoded[1]) : '';
+        if (!containerUrl) throw new Error('No se encontró la lista de servidores (multiplayer)');
+
+        const page = await fetchRawText(containerUrl);
+        const tabsMatch = /const\s+videoTabs\s*=\s*(\[[\s\S]*?\]);/.exec(page);
+        if (!tabsMatch) throw new Error('El reproductor no trae servidores');
+        const tabs = JSON.parse(tabsMatch[1]);
+
+        const servers = tabs
+            .filter(t => t.url && t.status !== 'inactive')
+            .map((t, index) => ({
+                id: index,
+                url: t.url,
+                kind: 'iframe',
+                label: t.tab_name || `Servidor ${index + 1}`,
+                title: t.tab_name || `Servidor ${index + 1}`
+            }));
+        return { servers: servers, containerUrl: containerUrl };
+    }
+
+    /**
+     * Servidor "Mytsumi" (mytsumi.com/multiplayer/play2026/player.php): un <video> con
+     * "const qualities = {...}" apuntando a MP4 directos (archive.org)
+     */
+    async function resolveMytsumiPlayer(url) {
+        const page = await fetchRawText(url);
+        const match = /const\s+qualities\s*=\s*(\{[\s\S]*?\});/.exec(page);
+        if (!match) throw new Error('Mytsumi: no se encontraron calidades');
+        const qualities = JSON.parse(match[1]);
+        const names = Object.keys(qualities);
+        if (!names.length) throw new Error('Mytsumi: sin videos');
+
+        const settings = window.TVStorage ? window.TVStorage.getSettings() : {};
+        const preferred = parseInt(settings.preferredQuality, 10) || 1080;
+        // La mayor calidad que no supere la preferida; si todas la superan, la menor
+        const height = n => parseInt(n, 10) || 0;
+        const sorted = names.slice().sort((a, b) => height(b) - height(a));
+        const chosen = sorted.find(n => height(n) <= preferred) || sorted[sorted.length - 1];
+        const videoUrl = qualities[chosen];
+        return {
+            url: videoUrl,
+            type: /\.m3u8(\?|#|$)/i.test(videoUrl) ? 'application/x-mpegURL' : 'video/mp4',
+            quality: chosen,
+            poster: ''
+        };
+    }
+
+    DIRECT_RESOLVERS.push({ pattern: /^https?:\/\/(www\.)?mytsumi\.com\/multiplayer\/play\d*\/player\.php/i, resolve: resolveMytsumiPlayer });
+
     const TVScraper = {
+        getMultiServers: getMultiServers,
+
+        /**
+         * Ranking del sitio: listas Top 10 (valorados, afecto, tendencias, vistas, comentarios, estrenos)
+         * @param {string} periodo '7d' | '30d' | 'all'
+         */
+        getRanking: async function(periodo) {
+            const doc = await fetchCleanHTML(`${BASE_URL}/ranking/?periodo=${encodeURIComponent(periodo || '7d')}`);
+            const blocks = [];
+            doc.querySelectorAll('section.aniyt-ranking-block').forEach(function(block) {
+                const header = block.querySelector('header');
+                const entries = [];
+                block.querySelectorAll('li.aniyt-ranking-entry').forEach(function(li) {
+                    const link = li.querySelector('a');
+                    const url = resolveUrl(attrOf(link, 'href'));
+                    const title = textOf(li.querySelector('.aniyt-ranking-copy strong'));
+                    if (!url || !title) return;
+                    // Las miniaturas vienen a 104x148: pedir una más grande al CDN de imágenes
+                    const image = extractImageUrl(li.querySelector('.aniyt-ranking-poster img'))
+                        .replace(/resize=\d+%2C\d+/i, 'resize=300%2C426');
+                    entries.push({
+                        rank: parseInt(textOf(li.querySelector('.aniyt-ranking-position')), 10) || entries.length + 1,
+                        url: url,
+                        title: title,
+                        season: textOf(li.querySelector('.aniyt-ranking-copy small')),
+                        metric: textOf(li.querySelector('.aniyt-ranking-metric')),
+                        image: image
+                    });
+                });
+                if (!entries.length) return;
+                blocks.push({
+                    id: block.id || '',
+                    kicker: textOf(header && header.querySelector('span')),
+                    title: textOf(header && header.querySelector('h2')),
+                    desc: textOf(header && header.querySelector('p')),
+                    entries: entries
+                });
+            });
+            return blocks;
+        },
         resolveUrl: resolveUrl,
         extractImageUrl: extractImageUrl,
         animeUrlFromEpisode: animeUrlFromEpisode,
@@ -272,7 +407,7 @@
                 const title = joinedText(titleEl);
                 const desc = textOf(slide.querySelector('.aniyt-hero-content p')) || '';
                 const imgEl = slide.querySelector('.aniyt-hero-art img');
-                const image = extractImageUrl(imgEl);
+                const image = extractImageUrl(imgEl).replace(/resize=1600%2C760/i, 'resize=1280%2C608');
                 const viewBtn = slide.querySelector('.aniyt-hero-actions a.aniyt-button--primary');
                 const url = resolveUrl(attrOf(viewBtn, 'href'));
                 const epBtn = slide.querySelector('.aniyt-hero-actions a:not(.aniyt-button--primary)');
@@ -470,8 +605,12 @@
             let containerId = '';
             let lang = 'SUB';
             let only = 'SUB';
+            // Formato alternativo (series más antiguas): mytsumi.com/multiplayer/options.php?server=multi&value=<id>
+            let multiOptionsUrl = '';
 
-            if (iframeSrc) {
+            if (iframeSrc && /\/multiplayer\/options\.php/i.test(iframeSrc)) {
+                multiOptionsUrl = resolveUrl(iframeSrc, 'https://mytsumi.com');
+            } else if (iframeSrc) {
                 try {
                     const parsedUrl = new URL(iframeSrc, 'https://mytsumi.com');
                     containerId = parsedUrl.searchParams.get('id') || '';
@@ -508,6 +647,7 @@
                 synopsis: synopsis,
                 backdrop: backdrop,
                 containerId: containerId,
+                multiOptionsUrl: multiOptionsUrl,
                 lang: lang,
                 only: only,
                 prevUrl: prevUrl,
