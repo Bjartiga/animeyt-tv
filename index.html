@@ -74,6 +74,9 @@
         <section id="view-watch" class="view hidden" data-nav-noscroll>
             <div id="player-viewport" class="player-viewport"></div>
 
+            <!-- Recibe el foco cuando se lo quitamos al iframe de un reproductor web -->
+            <div id="player-focus-sink" tabindex="-1"></div>
+
             <div id="player-buffering" class="player-buffering">
                 <div class="spinner"></div>
             </div>

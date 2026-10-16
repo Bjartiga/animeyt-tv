@@ -95,7 +95,10 @@
          * Manejador de botón Atrás del control remoto Samsung (10009)
          */
         _applyScale() {
-            const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+            // Solo el ancho: el teclado en pantalla del TV reduce el alto de la ventana y la app se encogía
+            const scale = window.innerWidth / 1280;
+            if (scale === this._scale) return;
+            this._scale = scale;
             document.body.style.transform = `scale(${scale})`;
         }
 
@@ -103,6 +106,12 @@
             // Un selector de opciones abierto se cierra primero
             if (window.TVPicker && window.TVPicker.isOpen()) {
                 window.TVPicker.close(true);
+                return;
+            }
+
+            // En el reproductor, Atrás primero cierra el panel de opciones
+            if (this.currentRoute.startsWith('#/watch') && this.player.isServerBarVisible) {
+                this.player.toggleServerBar();
                 return;
             }
 

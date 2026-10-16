@@ -34,6 +34,7 @@ import sys
 path, url = sys.argv[1], sys.argv[2]
 client = """<script>
 (function() {
+    window.__TV_DEV_LOGS__ = true;
     var URL_LOG = '%s';
     function send(level, args) {
         try {

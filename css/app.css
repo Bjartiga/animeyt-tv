@@ -89,6 +89,11 @@ button {
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0) 100%);
 }
 
+.app-header.is-solid {
+    background: var(--bg);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+}
+
 .brand {
     display: flex;
     align-items: center;
@@ -496,13 +501,22 @@ button {
 /* ---------- Rejillas (búsqueda, catálogo, mi lista) ---------- */
 .poster-grid {
     display: grid;
-    grid-template-columns: repeat(7, 150px);
-    grid-gap: 22px 18px;
+    grid-template-columns: repeat(5, 212px);
+    grid-gap: 26px 20px;
     justify-content: space-between;
 }
 
 .poster-grid .card {
     margin-right: 0;
+    width: 212px;
+}
+
+.poster-grid .card-title {
+    font-size: 17px;
+}
+
+.poster-grid .card-sub {
+    font-size: 14px;
 }
 
 .episode-grid {
@@ -1065,6 +1079,23 @@ button {
     background: #fff;
     color: #000;
     transform: scale(1.05);
+}
+
+#player-focus-sink {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    outline: none;
+}
+
+.server-web {
+    margin-left: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.18);
+    color: var(--text-dim);
 }
 
 .server-direct {

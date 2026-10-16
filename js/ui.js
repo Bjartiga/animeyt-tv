@@ -5,7 +5,7 @@
 (function(window) {
     'use strict';
 
-    const APP_VERSION = '1.3.2';
+    const APP_VERSION = '1.4.0';
 
     // Fila de Inicio: posición vertical donde queda la fila enfocada (debajo del billboard compacto)
     const HOME_ROW_ANCHOR = 300;
@@ -64,7 +64,8 @@
      */
     function posterCard(anime) {
         const badge = anime.newEpisode ? `<span class="card-badge card-badge-new">NUEVO ${esc(anime.newEpisode)}</span>` : '';
-        const sub = [anime.type, anime.score ? `★ ${anime.score}` : (anime.rating ? `★ ${anime.rating}` : ''), anime.season || anime.status]
+        const score = String(anime.score || anime.rating || '').replace(/[★☆\s]+/g, ' ').trim();
+        const sub = [anime.type, score ? `★ ${score}` : '', anime.season || anime.status]
             .filter(Boolean).join(' · ');
         return `
             <button type="button" class="card card-poster" data-focusable="true" data-action="open-anime"
@@ -137,9 +138,12 @@
                 btn.classList.toggle('is-active', btn.dataset.view === viewName);
             });
 
-            // En el reproductor se oculta el header
+            // En el reproductor se oculta el header; fuera de Inicio va con fondo sólido (el contenido pasa por debajo)
             const header = document.getElementById('app-header');
-            if (header) header.classList.toggle('hidden', viewName === 'watch');
+            if (header) {
+                header.classList.toggle('hidden', viewName === 'watch');
+                header.classList.toggle('is-solid', viewName !== 'home');
+            }
 
             const main = document.getElementById('app-main');
             if (main) {

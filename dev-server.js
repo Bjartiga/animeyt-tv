@@ -39,6 +39,7 @@ const MIME_TYPES = {
 const DEV_CLIENT = `<script>
 (function() {
     window.__TV_DEV__ = true;
+    window.__TV_DEV_LOGS__ = true;
     function send(level, args) {
         try {
             var parts = [];

@@ -278,6 +278,8 @@
                 }
                 if (typeof this.onBack === 'function') {
                     e.preventDefault();
+                    // Evita que el reproductor procese el mismo Atrás (antes cerraba el panel y además salía del video)
+                    e.stopImmediatePropagation();
                     this.onBack();
                     return;
                 }

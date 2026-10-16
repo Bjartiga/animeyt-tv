@@ -330,6 +330,7 @@
             iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation allow-forms');
             iframe.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
             iframe.setAttribute('frameborder', '0');
+            iframe.setAttribute('tabindex', '-1');
             iframe.setAttribute('scrolling', 'no');
             iframe.style.cssText = 'width: 100%; height: 100%; border: none; background: #000; position: absolute; top: 0; left: 0; z-index: 1;';
             iframe.src = targetUrl;
@@ -508,19 +509,31 @@
          */
         _startFocusKeeper() {
             this._stopFocusKeeper();
-            this.focusKeeperInterval = setInterval(() => {
+            // Los reproductores web (iframe) se quedan con el foco y las teclas del control dejan de llegar a la app.
+            // window.focus() no alcanza: hay que sacar el foco del iframe y ponerlo en un elemento de la app.
+            const reclaim = () => {
                 if (!this.isPlaying) return;
-                // Si el activeElement es el iframe o null, reenfocamos la app principal
-                if (document.activeElement === this.iframe || document.activeElement === document.body) {
-                    window.focus();
+                const active = document.activeElement;
+                if (active && active.tagName === 'IFRAME') {
+                    this._debug('foco recuperado del iframe');
+                    active.blur();
+                    const sink = document.getElementById('player-focus-sink');
+                    if (sink) sink.focus();
                 }
-            }, 250);
+            };
+            this._onWindowBlur = () => setTimeout(reclaim, 0);
+            window.addEventListener('blur', this._onWindowBlur);
+            this.focusKeeperInterval = setInterval(reclaim, 300);
         }
 
         _stopFocusKeeper() {
             if (this.focusKeeperInterval) {
                 clearInterval(this.focusKeeperInterval);
                 this.focusKeeperInterval = null;
+            }
+            if (this._onWindowBlur) {
+                window.removeEventListener('blur', this._onWindowBlur);
+                this._onWindowBlur = null;
             }
         }
 
@@ -593,7 +606,7 @@
                 btn.innerHTML = `
                     <span class="server-num">${index + 1}</span>
                     <span class="server-name">${server.label}</span>
-                    ${direct ? '<span class="server-direct">SIN ANUNCIOS</span>' : ''}
+                    ${direct ? '<span class="server-direct">SIN ANUNCIOS</span>' : '<span class="server-web">WEB</span>'}
                 `;
 
                 btn.addEventListener('click', () => {
@@ -623,9 +636,20 @@
 
         switchServer(index) {
             if (index < 0 || index >= this.servers.length) return;
+            this._debug(`cambio de servidor -> ${this.servers[index].label}`);
             this.currentServerIndex = index;
             this._mountCurrentServer();
-            this._showNotification(`Servidor: ${this.servers[index].label}`);
+            const server = this.servers[index];
+            this._showNotification(window.TVScraper.canPlayDirect(server)
+                ? `Servidor: ${server.label}`
+                : `${server.label}: reproductor web del sitio (puede tener anuncios)`);
+        }
+
+        /**
+         * Trazas de diagnóstico: solo en builds con DEV_LOGS (se ven en el dev-server del Mac)
+         */
+        _debug(message) {
+            if (window.__TV_DEV_LOGS__) console.log(`[debug] ${message}`);
         }
 
         /**
@@ -633,6 +657,7 @@
          */
         toggleServerBar() {
             this.isServerBarVisible = !this.isServerBarVisible;
+            this._debug(`panel ${this.isServerBarVisible ? 'abierto' : 'cerrado'} desde ${(new Error().stack || '').split('\n')[2] || '?'}`);
             this._updateNavigationLock();
             const main = document.getElementById('app-main');
             if (main) main.scrollTop = 0;
@@ -692,6 +717,7 @@
             if (!this.isPlaying) return;
 
             const code = window.TVKeys ? window.TVKeys.normalizeEvent(e) : e.keyCode;
+            this._debug(`tecla ${code} panel=${this.isServerBarVisible} video=${!!this.video} nav=${window.appNavigation && window.appNavigation.enabled} foco=${document.activeElement && document.activeElement.tagName}`);
 
             // Retorno / Salir del reproductor
             if (code === (window.TVKeys ? window.TVKeys.RETURN : 10009)) {
